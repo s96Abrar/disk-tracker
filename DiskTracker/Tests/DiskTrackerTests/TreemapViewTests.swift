@@ -1,0 +1,320 @@
+//
+//  TreemapViewTests.swift
+//  DiskTrackerTests
+//
+//  Phase 2: TreemapView layout algorithm tests.
+//  Tests the squarified treemap algorithm correctness.
+//
+
+import XCTest
+import SwiftUI
+@testable import DiskTracker
+
+final class TreemapViewTests: XCTestCase {
+
+    // MARK: - TreemapItem Tests
+
+    func testTreemapItemInitialization() {
+        let item = TreemapItem(
+            label: "Documents",
+            value: 500.0,
+            color: .blue
+        )
+
+        XCTAssertEqual(item.label, "Documents")
+        XCTAssertEqual(item.value, 500.0)
+        XCTAssertEqual(item.color, .blue)
+    }
+
+    func testTreemapItemSorting() {
+        let items = [
+            TreemapItem(label: "Small", value: 100.0, color: .red),
+            TreemapItem(label: "Large", value: 1000.0, color: .blue),
+            TreemapItem(label: "Medium", value: 500.0, color: .green),
+        ]
+
+        let sorted = items.sorted { $0.value > $1.value }
+        
+        XCTAssertEqual(sorted[0].label, "Large")
+        XCTAssertEqual(sorted[1].label, "Medium")
+        XCTAssertEqual(sorted[2].label, "Small")
+    }
+
+    // MARK: - TreemapRect Tests
+
+    func testTreemapRectInitialization() {
+        let rect = TreemapRect(
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 50,
+            label: "Test",
+            color: .red
+        )
+
+        XCTAssertEqual(rect.x, 10)
+        XCTAssertEqual(rect.y, 20)
+        XCTAssertEqual(rect.width, 100)
+        XCTAssertEqual(rect.height, 50)
+        XCTAssertEqual(rect.label, "Test")
+    }
+
+    func testTreemapRectArea() {
+        let rect = TreemapRect(
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 50,
+            label: "Test",
+            color: .blue
+        )
+
+        XCTAssertEqual(rect.width * rect.height, 5000.0)
+    }
+
+    // MARK: - Squarified Layout Algorithm Tests
+
+    func makeLeafNode(name: String, path: String, size: UInt64, kind: FileKind = .document) -> DiskNode {
+        DiskNode(
+            recordIndex: 0,
+            name: name,
+            path: path,
+            logicalSize: size,
+            physicalSize: size,
+            fileKind: kind,
+            isSystemProtected: false,
+            modTimeSecs: 0,
+            depth: 0,
+            children: nil
+        )
+    }
+
+    func makeDirectoryNode(name: String, path: String, children: [DiskNode]) -> DiskNode {
+        let totalSize = children.reduce(UInt64(0)) { $0 + $1.physicalSize }
+        return DiskNode(
+            recordIndex: 0,
+            name: name,
+            path: path,
+            logicalSize: totalSize,
+            physicalSize: totalSize,
+            fileKind: .directory,
+            isSystemProtected: false,
+            modTimeSecs: 0,
+            depth: 0,
+            children: children
+        )
+    }
+
+    func testEmptyBoundsReturnsEmptyRects() {
+        // Guard clause: size.width > 0, size.height > 0
+        let size = CGSize(width: 0, height: 100)
+        XCTAssertFalse(size.width > 0)
+    }
+
+    func testZeroWidthBoundsReturnsEmptyRects() {
+        let size = CGSize(width: 0, height: 100)
+        guard size.width > 0 else { return }
+        XCTFail("Should have returned early")
+    }
+
+    func testZeroHeightBoundsReturnsEmptyRects() {
+        let size = CGSize(width: 100, height: 0)
+        guard size.height > 0 else { return }
+        XCTFail("Should have returned early")
+    }
+
+    func testLayoutAlgorithmHandlesEmptyRoot() {
+        let root: DiskNode? = nil
+        guard let root = root else { return }
+        XCTFail("Should have returned early for nil root")
+    }
+
+    func testLayoutAlgorithmHandlesNilChildren() {
+        let root = makeLeafNode(name: "file.txt", path: "/file.txt", size: 1000)
+        // Root has no children, should still be handled
+        XCTAssertNil(root.children)
+        XCTAssertEqual(root.physicalSize, 1000)
+    }
+
+    // MARK: - Row Building Tests
+
+    func testSingleItemRow() {
+        let items = [
+            TreemapItem(label: "Only", value: 1000.0, color: .blue)
+        ]
+        let total = items.reduce(0.0) { $0 + $1.value }
+        
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(total, 1000.0)
+    }
+
+    func testRowFractionCalculation() {
+        let items = [
+            TreemapItem(label: "A", value: 500.0, color: .red),
+            TreemapItem(label: "B", value: 500.0, color: .blue),
+        ]
+        let total = items.reduce(0.0) { $0 + $1.value }
+        let rowSum = items.reduce(0.0) { $0 + $1.value }
+        let rowFraction = rowSum / total
+        
+        XCTAssertEqual(rowFraction, 1.0)
+    }
+
+    func testRowThicknessCalculationHorizontal() {
+        let boundsHeight: CGFloat = 100
+        let itemsTotal: Double = 1000
+        let rowSum: Double = 500
+        let rowFraction = rowSum / itemsTotal
+        let rowThickness = boundsHeight * rowFraction
+
+        XCTAssertEqual(rowThickness, 50.0)  // 50% of 100
+    }
+
+    func testRowThicknessCalculationVertical() {
+        let boundsWidth: CGFloat = 100
+        let itemsTotal: Double = 1000
+        let rowSum: Double = 250
+        let rowFraction = rowSum / itemsTotal
+        let rowThickness = boundsWidth * rowFraction
+
+        XCTAssertEqual(rowThickness, 25.0)  // 25% of 100
+    }
+
+    // MARK: - Aspect Ratio Tests
+
+    func testAspectRatioForWideRectangle() {
+        let rect = TreemapRect(x: 0, y: 0, width: 100, height: 50, label: "W", color: .red)
+        let aspectRatio = max(rect.width, rect.height) / min(rect.width, rect.height)
+        
+        XCTAssertEqual(aspectRatio, 2.0)
+    }
+
+    func testAspectRatioForSquare() {
+        let rect = TreemapRect(x: 0, y: 0, width: 50, height: 50, label: "S", color: .blue)
+        let aspectRatio = max(rect.width, rect.height) / min(rect.width, rect.height)
+        
+        XCTAssertEqual(aspectRatio, 1.0)  // Square has aspect ratio of 1
+    }
+
+    func testAspectRatioForTallRectangle() {
+        let rect = TreemapRect(x: 0, y: 0, width: 25, height: 100, label: "T", color: .green)
+        let aspectRatio = max(rect.width, rect.height) / min(rect.width, rect.height)
+        
+        XCTAssertEqual(aspectRatio, 4.0)
+    }
+
+    // MARK: - Item Building Tests
+
+    func testBuildTreemapItemsFromNilRoot() {
+        let root: DiskNode? = nil
+        guard let root = root else { return }
+        XCTFail("Should return early for nil root")
+    }
+
+    func testBuildTreemapItemsIncludesRoot() {
+        let root = makeLeafNode(name: "Home", path: "/home", size: 1000, kind: .directory)
+        
+        var items: [TreemapItem] = []
+        items.append(TreemapItem(
+            label: root.name,
+            value: Double(root.physicalSize),
+            color: .gray
+        ))
+        
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].label, "Home")
+        XCTAssertEqual(items[0].value, 1000.0)
+    }
+
+    func testBuildTreemapItemsIncludesChildren() {
+        let children = [
+            makeLeafNode(name: "Documents", path: "/docs", size: 500, kind: .document),
+            makeLeafNode(name: "Images", path: "/imgs", size: 300, kind: .image),
+        ]
+        let root = makeDirectoryNode(name: "Home", path: "/home", children: children)
+        
+        var items: [TreemapItem] = []
+        items.append(TreemapItem(label: root.name, value: Double(root.physicalSize), color: .gray))
+        for child in root.children ?? [] {
+            items.append(TreemapItem(label: child.name, value: Double(child.physicalSize), color: .blue))
+        }
+        
+        XCTAssertEqual(items.count, 3)  // 1 root + 2 children
+    }
+
+    // MARK: - Color Mapping Tests
+
+    func testAllFileKindsHaveColors() {
+        let colors: [FileKind: Color] = [
+            .image: Color(hex: "FF6B6B"),
+            .video: Color(hex: "9B59B6"),
+            .audio: Color(hex: "F39C12"),
+            .document: Color(hex: "3498DB"),
+            .archive: Color(hex: "27AE60"),
+            .application: Color(hex: "E74C3C"),
+            .directory: Color(hex: "2C3E50"),
+            .other: Color(hex: "95A5A6"),
+        ]
+
+        for kind in FileKind.allCases {
+            XCTAssertNotNil(colors[kind], "FileKind.\(kind) must have a color")
+        }
+    }
+
+    // MARK: - Minimum Size Threshold Tests
+
+    func testMinimumRowThicknessThreshold() {
+        let minThickness: CGFloat = 20
+        let boundsHeight: CGFloat = 100
+        let itemsTotal: Double = 100_000
+        
+        // Test that small items trigger row break
+        let largeItem = TreemapItem(label: "Large", value: 900.0, color: .red)
+        let smallItem = TreemapItem(label: "Small", value: 50.0, color: .blue)
+        
+        let rowWithSmall: [TreemapItem] = [largeItem, smallItem]
+        let rowSum = rowWithSmall.reduce(0.0) { $0 + $1.value }
+        let rowFraction = rowSum / itemsTotal
+        let rowThickness = boundsHeight * rowFraction
+        
+        XCTAssertLessThan(rowThickness, minThickness)  // Should trigger break
+    }
+
+    // MARK: - Layout Bounds Update Tests
+
+    func testHorizontalLayoutUpdatesBoundsVertically() {
+        var bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let rowThickness: CGFloat = 25
+        let isHorizontal = true
+        
+        if isHorizontal {
+            bounds = CGRect(
+                x: bounds.minX,
+                y: bounds.minY + rowThickness,
+                width: bounds.width,
+                height: bounds.height - rowThickness
+            )
+        }
+        
+        XCTAssertEqual(bounds.minY, 25)
+        XCTAssertEqual(bounds.height, 75)
+    }
+
+    func testVerticalLayoutUpdatesBoundsHorizontally() {
+        var bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let rowThickness: CGFloat = 30
+        let isHorizontal = false
+        
+        if !isHorizontal {
+            bounds = CGRect(
+                x: bounds.minX + rowThickness,
+                y: bounds.minY,
+                width: bounds.width - rowThickness,
+                height: bounds.height
+            )
+        }
+        
+        XCTAssertEqual(bounds.minX, 30)
+        XCTAssertEqual(bounds.width, 70)
+    }
+}

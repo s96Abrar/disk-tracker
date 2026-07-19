@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+#
+#  build-disk-tracker — Unified build script for Disk Tracker
+#
+#  Usage:
+#    ./build-disk-tracker           Build both Rust and Swift (default)
+#    ./build-disk-tracker --rust    Build only the Rust engine
+#    ./build-disk-tracker --swift   Build only the Swift app
+#    ./build-disk-tracker --clean   Clean all build artifacts
+#    ./build-disk-tracker --help    Show this help message
+#
+
+set -euo pipefail
+
+# ── Setup ────────────────────────────────────────────────────────────
+
+# Ensure Cargo tools are available
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Project root (directory of this script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+
+# Sub-project paths
+RUST_DIR="$PROJECT_ROOT/traversal-engine"
+SWIFT_DIR="$PROJECT_ROOT/DiskTracker"
+
+# ── Colors ───────────────────────────────────────────────────────────
+
+BOLD='\033[1m'
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+BLUE='\033[34m'
+RESET='\033[0m'
+
+# ── Helpers ──────────────────────────────────────────────────────────
+
+log_info()  { echo -e "${BLUE}ℹ  $1${RESET}"; }
+log_ok()    { echo -e "${GREEN}✅  $1${RESET}"; }
+log_warn()  { echo -e "${YELLOW}⚠️  $1${RESET}"; }
+log_error() { echo -e "${RED}❌  $1${RESET}" >&2; }
+
+header() {
+    echo
+    echo -e "${BOLD}$1${RESET}"
+    echo "$(printf '━%.0s' {1..60})"
+}
+
+# ── Build Functions ──────────────────────────────────────────────────
+
+build_rust() {
+    header "Building Rust Engine (traversal-engine)"
+
+    if ! command -v cargo &>/dev/null; then
+        log_error "cargo not found. Ensure Rust is installed and \$HOME/.cargo/bin is available."
+        return 1
+    fi
+
+    cd "$RUST_DIR"
+    log_info "Running: cargo build --release"
+    cargo build --release || exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+        log_ok "Rust engine built successfully"
+    fi
+}
+
+build_swift() {
+    header "Building Swift App (DiskTracker)"
+
+    if ! command -v xcodebuild &>/dev/null; then
+        log_error "xcodebuild not found. Ensure Xcode Command Line Tools are installed."
+        return 1
+    fi
+
+    cd "$SWIFT_DIR"
+    log_info "Running: xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker -configuration Debug build"
+    xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker -configuration Debug build || exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        log_ok "Swift app built successfully"
+    fi
+}
+
+clean_all() {
+    header "Cleaning build artifacts"
+
+    if [[ -d "$RUST_DIR/target" ]]; then
+        log_info "Removing Rust target directory..."
+        rm -rf "$RUST_DIR/target"
+        log_ok "Rust artifacts cleaned"
+    fi
+
+    log_info "Removing Xcode DerivedData..."
+    rm -rf ~/Library/Developer/Xcode/DerivedData/DiskTracker-*
+    log_ok "Swift artifacts cleaned"
+}
+
+show_help() {
+    sed -n '/^#  /,/^#$/p' "$0" | sed 's/^# //; s/^#$//'
+}
+
+# ── Main ─────────────────────────────────────────────────────────────
+
+main() {
+    echo -e "${BOLD}DiskTracker Build Tool${RESET}"
+    echo "Project: $PROJECT_ROOT"
+    echo ""
+
+    # Determine what to build
+    local build_rust=false
+    local build_swift=false
+    local do_clean=false
+
+    if [[ $# -eq 0 ]]; then
+        build_rust=true
+        build_swift=true
+    else
+        for arg in "$@"; do
+            case "$arg" in
+                --rust)   build_rust=true ;;
+                --swift)  build_swift=true ;;
+                --both)   build_rust=true; build_swift=true ;;
+                --clean)  do_clean=true ;;
+                --help|-h) show_help; exit 0 ;;
+                *)
+                    log_error "Unknown argument: $arg"
+                    echo "Use --help for usage information."
+                    exit 1
+                    ;;
+            esac
+        done
+    fi
+
+    # Run clean if requested
+    if $do_clean; then
+        clean_all
+        # If no build targets, exit after clean
+        if ! $build_rust && ! $build_swift; then
+            exit 0
+        fi
+    fi
+
+    # Build requested targets
+    local exit_code=0
+
+    if $build_rust; then
+        build_rust || exit_code=$?
+    fi
+
+    if $build_swift; then
+        if [[ $exit_code -eq 0 ]]; then
+            build_swift || exit_code=$?
+        else
+            log_warn "Skipping Swift build due to previous failure"
+        fi
+    fi
+
+    echo
+    if [[ $exit_code -eq 0 ]]; then
+        log_ok "All builds completed successfully!"
+    else
+        log_error "Build failed with exit code $exit_code"
+    fi
+
+    exit $exit_code
+}
+
+main "$@"

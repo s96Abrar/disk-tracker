@@ -1,0 +1,96 @@
+//
+//  FileOperationsService.swift
+//  DiskTracker
+//
+//  Safe file operations with sandbox-friendly fallbacks.
+//  Enforces system path protection at the service level.
+//
+
+import Foundation
+import AppKit
+
+/// Errors that can occur during file operations.
+enum FileOperationError: Error, Sendable {
+    case invalidURL
+    case systemPathProtected
+    case deletionFailed(underlying: Error)
+}
+
+/// Provides trash, Finder reveal, and Quick Look functionality.
+/// Enforces system path protection at the service level.
+final class FileOperationsService: @unchecked Sendable {
+
+    // Singleton
+    static let shared = FileOperationsService()
+
+    /// Paths that are protected from deletion/modification.
+    private let protectedPaths: Set<String> = [
+        "/", "/System", "/usr", "/bin", "/sbin", "/lib", "/lib64",
+        "/opt", "/private", "/dev", "/Volumes", "/Network",
+        "/Applications", "/Library", "/Users/Guest",
+        "/System/Library", "/System/Volumes",
+        NSHomeDirectory() + "/Library",
+    ]
+
+    // MARK: - System Path Protection
+
+    /// Returns true if the given URL points to a system-protected path.
+    func isSystemProtected(url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        let path = url.resolvingSymlinksInPath().path
+
+        // Check if the path or any of its ancestors is protected
+        for protected in protectedPaths {
+            if path == protected || path.hasPrefix(protected + "/") {
+                return true
+            }
+        }
+        return false
+    }
+
+    // MARK: - Trash / Deletion
+
+    /// Move a single file or directory to trash.
+    /// Returns `.failure(.systemPathProtected)` if the path is protected.
+    func moveToTrash(url: URL) -> Result<Void, FileOperationError> {
+        guard url.isFileURL else {
+            return .failure(.invalidURL)
+        }
+        guard !isSystemProtected(url: url) else {
+            return .failure(.systemPathProtected)
+        }
+
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            return .success(())
+        } catch {
+            return .failure(.deletionFailed(underlying: error))
+        }
+    }
+
+    // MARK: - Finder / Reveal
+
+    /// Open Finder with the file pre-selected.
+    func showInFinder(url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    // MARK: - Quick Look
+
+    /// Preview a file using Quick Look.
+    func previewWithQuickLook(url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - Batch Trash
+
+    /// Move multiple files/directories to trash, returning per-item results.
+    /// Protected paths return `.systemPathProtected`; valid paths return `.success`
+    /// or `.deletionFailed`.
+    func moveMultipleToTrash(urls: [URL]) -> [(url: URL, result: Result<Void, FileOperationError>)] {
+        urls.map { url in
+            let result = moveToTrash(url: url)
+            return (url: url, result: result)
+        }
+    }
+}

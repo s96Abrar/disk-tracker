@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Standard Bundle Keys -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+
+    <key>CFBundleExecutable</key>
+    <string>com.disktracker.helper</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>com.disktracker.helper</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>CFBundleName</key>
+    <string>DiskTracker Helper</string>
+
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+
+    <!-- Background only — no dock icon, no menu bar -->
+    <key>LSBackgroundOnly</key>
+    <true/>
+
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- XPC Mach service exposed to clients -->
+    <key>MachServices</key>
+    <dict>
+        <key>com.disktracker.helper</key>
+        <true/>
+    </dict>
+
+    <!--
+        SMAuthorizedClients
+        Only the DiskTracker main app (com.disktracker.app) may connect.
+        Update the requirement string to include your Team Identifier in production:
+        identifier "com.disktracker.app" and anchor apple generic and
+        certificate leaf[subject.OU] = "YOUR_TEAM_ID"
+    -->
+    <key>SMAuthorizedClients</key>
+    <array>
+        <string>identifier "com.disktracker.app" and anchor apple generic</string>
+    </array>
+
+    <!-- Run as a daemon (not an agent), started by launchd on XPC demand -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/PrivilegedHelperTools/com.disktracker.helper</string>
+    </array>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>LaunchEvents</key>
+    <dict/>
+</dict>
+</plist>

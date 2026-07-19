@@ -1,0 +1,35 @@
+# Swift / Xcode
+.build/
+DerivedData/
+build/
+
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+*.xcodeproj/*.perspectivev3
+*.xcodeproj/*.mode1v3
+*.xcodeproj/*.mode2
+*.xcodeproj/*.pbxuser
+
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Swift Package Manager
+.swiftpm/
+Package.resolved
+
+## Carthage
+Carthage/Build/
+
+## CocoaPods
+Pods/
+
+## fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
