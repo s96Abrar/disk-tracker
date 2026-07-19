@@ -121,12 +121,12 @@ enum SmartFilterService {
     /// Find directories with no files (only empty subdirectories or truly empty).
     ///
     /// A folder is "empty" if it contains zero files at any depth.
-    /// Folders that only contain other empty folders are also reported.
+    /// The root is only included if it has no children at all.
     ///
     /// - Parameters:
     ///   - root: Root of the scanned tree.
     ///   - config: Filter configuration.
-    /// - Returns: Detected empty folders, sorted by path depth descending (deepest first).
+    /// - Returns: Detected empty folders, deepest first.
     static func findEmptyFolders(
         in root: DiskNode,
         config: SmartFilterConfig
@@ -134,20 +134,47 @@ enum SmartFilterService {
         var results: [SmartFilterResult] = []
         let now = Date()
 
-        traverse(node: root, config: config) { node in
-            guard node.fileKind == .directory || node.children != nil else { return }
-            let isEmpty = !hasFiles(at: node)
-            if isEmpty {
-                results.append(SmartFilterResult(
-                    node: node,
-                    matchedAt: now,
-                    matchReason: .emptyFolder
-                ))
-            }
+        // ponytail: tests leave recordIndex at 0 for every node, so we use a
+        // content key instead. We compute depths once per call (O(n)) and
+        // skip the root unless it's a true 0-child directory.
+        let depths = depthMap(from: root)
+        func depthOf(_ node: DiskNode) -> Int {
+            depths[Self.key(for: node)] ?? Int(node.depth)
         }
 
-        // Sort by depth descending — deepest empty folders first
-        return results.sorted { $0.node.depth > $1.node.depth }
+        if isLeafDirectory(root) {
+            results.append(SmartFilterResult(
+                node: root, matchedAt: now, matchReason: .emptyFolder
+            ))
+            return results.sorted { depthOf($0.node) > depthOf($1.node) }
+        }
+
+        collectEmptyDescendants(node: root, config: config,
+                                results: &results, now: now)
+        return results.sorted { depthOf($0.node) > depthOf($1.node) }
+    }
+
+    /// Recursively appends descendant directories that contain no files.
+    static func collectEmptyDescendants(
+        node: DiskNode,
+        config: SmartFilterConfig,
+        results: inout [SmartFilterResult],
+        now: Date
+    ) {
+        for child in node.children ?? [] {
+            if !config.includeHiddenFiles && child.name.hasPrefix(".") { continue }
+            if !config.includeSystemPaths && child.isSystemProtected { continue }
+            guard child.fileKind == .directory else { continue }
+            if !hasFiles(at: child) {
+                results.append(SmartFilterResult(
+                    node: child, matchedAt: now, matchReason: .emptyFolder
+                ))
+            }
+            collectEmptyDescendants(
+                node: child, config: config,
+                results: &results, now: now
+            )
+        }
     }
 
     /// Returns true if the node or any descendant is a file.
@@ -164,6 +191,43 @@ enum SmartFilterService {
             }
         }
         return false
+    }
+
+    /// True when `node` is a directory with no children (truly empty dir).
+    private static func isLeafDirectory(_ node: DiskNode) -> Bool {
+        guard node.fileKind == .directory else { return false }
+        return (node.children?.isEmpty ?? true)
+    }
+
+    /// Walks `root` once, mapping each node to its true depth (0-based).
+    /// ponytail: O(n) per call; call sites pass the same root twice (sort +
+    /// collect), so the result is reused.
+    private static func depthMap(from root: DiskNode) -> [String: Int] {
+        var out: [String: Int] = [:]
+        func walk(_ n: DiskNode, _ d: Int) {
+            out[Self.key(for: n)] = d
+            for c in n.children ?? [] { walk(c, d + 1) }
+        }
+        walk(root, 0)
+        return out
+    }
+
+    /// Map each node's identity to its 0-based depth from `root`.
+    /// ponytail: O(n); runs once per findEmptyFilters call. Uses path+name as
+    /// key because test fixtures give every node `recordIndex = 0`.
+    private static func depthsIn(_ root: DiskNode) -> [String: Int] {
+        var out: [String: Int] = [:]
+        func walk(_ n: DiskNode, _ d: Int) {
+            out[Self.key(for: n)] = d
+            for c in n.children ?? [] { walk(c, d + 1) }
+        }
+        walk(root, 0)
+        return out
+    }
+
+    /// Stable identity key for `DiskNode` without IDs (DiskNode.id is per-instance).
+    private static func key(for node: DiskNode) -> String {
+        "\(node.path)|\(node.name)|\(node.recordIndex)|\(node.physicalSize)"
     }
 
     // MARK: - File Type Filter
