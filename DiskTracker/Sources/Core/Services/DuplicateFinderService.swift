@@ -12,6 +12,35 @@ import CryptoKit
 
 // Note: DuplicateGroup struct is defined in AppModel.swift (file scope for @Observable macro compatibility)
 
+// MARK: - Inline hasher protocol
+
+/// Source of bytes for duplicate hashing — defaults to disk reads; tests inject in-memory data.
+protocol DuplicateContentSource {
+    /// Returns up to `length` bytes from the start of `url`. ponytail: shorter reads are valid.
+    func read(url: URL, length: Int) -> Data?
+    /// Streams the entire file in chunks. ponytail: tests can satisfy with one chunk.
+    func readAll(url: URL) -> Data?
+}
+
+struct DiskContentSource: DuplicateContentSource {
+    func read(url: URL, length: Int) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        return handle.readData(ofLength: length)
+    }
+    func readAll(url: URL) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var out = Data()
+        while true {
+            let chunk = handle.readData(ofLength: 1_048_576)
+            if chunk.isEmpty { break }
+            out.append(chunk)
+        }
+        return out
+    }
+}
+
 // MARK: - Duplicate Finder Service
 
 /// Content-aware duplicate detection.
@@ -27,6 +56,16 @@ enum DuplicateFinderService {
 
     /// Bytes to read for the partial-hash filter pass.
     static let partialReadSize = 64 * 1_024
+
+    /// Default disk-backed source. Tests inject their own via `setContentSource(_:)`.
+    /// ponytail: kept as a static var so tests can swap on/off. Equivalent in cost to
+    /// a shared actor — duplicates are run on background queues anyway.
+    nonisolated(unsafe) static var contentSource: DuplicateContentSource = DiskContentSource()
+
+    /// Tests use this to install a fake content source; pass `nil` to restore defaults.
+    static func setContentSource(_ source: DuplicateContentSource?) {
+        contentSource = source ?? DiskContentSource()
+    }
 
     // MARK: - Entry Point
 
@@ -50,7 +89,7 @@ enum DuplicateFinderService {
         guard !candidates.isEmpty else { return [] }
 
         // 3. Partial-hash filter (first 64 KB)
-        var partialBuckets: [SHA256Digest: [DiskNode]] = [:]
+        var partialBuckets: [Data: [DiskNode]] = [:]
         for (_, files) in candidates {
             for file in files {
                 guard let partial = partialSHA256(url: URL(fileURLWithPath: file.path)) else { continue }
@@ -62,7 +101,7 @@ enum DuplicateFinderService {
         guard !partialMatches.isEmpty else { return [] }
 
         // 4. Full-hash confirmation; group duplicates
-        var fullToGroup: [SHA256Digest: [DiskNode]] = [:]
+        var fullToGroup: [Data: [DiskNode]] = [:]
         for (_, files) in partialMatches {
             for file in files {
                 guard let full = fullSHA256(url: URL(fileURLWithPath: file.path)) else { continue }
@@ -75,7 +114,7 @@ enum DuplicateFinderService {
             let orig = nodes.max(by: { $0.modTimeSecs < $1.modTimeSecs })!
             let wasted = nodes.filter { $0.id != orig.id }.reduce(UInt64(0)) { $0 + $1.physicalSize }
             groups.append(DuplicateGroup(
-                hash: Data(hash),
+                hash: hash,
                 nodes: nodes,
                 wastedBytes: wasted
             ))
@@ -86,28 +125,17 @@ enum DuplicateFinderService {
 
     // MARK: - Hashing
 
-    /// SHA-256 of the first `partialReadSize` bytes.
-    private static func partialSHA256(url: URL) -> SHA256Digest? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-
-        let data = handle.readData(ofLength: partialReadSize)
-        guard !data.isEmpty else { return nil }
-        return SHA256.hash(data: data)
+    /// SHA-256 of the first `partialReadSize` bytes. Returns the raw digest as `Data`.
+    private static func partialSHA256(url: URL) -> Data? {
+        guard let data = contentSource.read(url: url, length: partialReadSize),
+              !data.isEmpty else { return nil }
+        return Data(SHA256.hash(data: data))
     }
 
-    /// Full-file SHA-256.  Uses streaming for large files.
-    private static func fullSHA256(url: URL) -> SHA256Digest? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-
-        var hasher = SHA256()
-        while true {
-            let chunk = handle.readData(ofLength: 1_048_576)  // 1 MB chunks
-            if chunk.isEmpty { break }
-            hasher.update(data: chunk)
-        }
-        return hasher.finalize()
+    /// Full-file SHA-256. Returns raw digest bytes.
+    private static func fullSHA256(url: URL) -> Data? {
+        guard let data = contentSource.readAll(url: url), !data.isEmpty else { return nil }
+        return Data(SHA256.hash(data: data))
     }
 
     // MARK: - Tree Traversal

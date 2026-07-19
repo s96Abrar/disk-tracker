@@ -26,13 +26,15 @@ struct AppBundleBreakdown: Identifiable, Sendable {
 
 enum AppBundleAnalyzer {
 
-    /// Find .app bundles >= 100 MB and break them down.
-    /// Returns results as SmartFilterResult so they render in the Phase 4/5 results view.
+    /// Default size threshold (100 MB) above which `.app` bundles are surfaced in smart filters.
+    static let defaultThreshold: UInt64 = 100_000_000
+
+    /// Find .app bundles at or above the threshold. Pass a custom threshold to test lower bounds.
     static func findLargeBundles(
         in root: DiskNode,
-        config: SmartFilterConfig
+        config: SmartFilterConfig,
+        threshold: UInt64 = defaultThreshold
     ) -> [SmartFilterResult] {
-        let threshold: UInt64 = 100_000_000  // 100 MB
         var results: [SmartFilterResult] = []
         findBundles(node: root, config: config, threshold: threshold, into: &results)
         return results.sorted { $0.node.physicalSize > $1.node.physicalSize }

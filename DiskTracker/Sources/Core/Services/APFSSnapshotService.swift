@@ -28,11 +28,66 @@ struct APFSSnapshot: Identifiable, Sendable {
 /// needs root and is deferred to the privileged helper tool.
 enum APFSSnapshotService {
 
+    /// Abstraction over the `tmutil` subprocess for testability.
+    /// ponytail: the production runner shells out to /usr/bin/tmutil; tests inject
+    /// canned output to drive parser behavior without touching the system binary.
+    protocol ProcessRunner {
+        func run(arguments: [String]) -> String?
+    }
+
+    /// Live runner — execs /usr/bin/tmutil synchronously.
+    struct TmUtilRunner: ProcessRunner {
+        func run(arguments: [String]) -> String? {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tmutil")
+            process.arguments = arguments
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                return nil
+            }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)
+        }
+    }
+
+    /// Default runner; tests inject their own via setRunner.
+    /// ponytail: kept as a static var with explicit setter so test tear-down is obvious.
+    nonisolated(unsafe) static var runner: ProcessRunner = TmUtilRunner()
+
+    /// Install a fake runner for tests. Pass `nil` to restore defaults.
+    static func setRunner(_ next: ProcessRunner?) {
+        runner = next ?? TmUtilRunner()
+    }
+
     /// List local snapshots for the given volume path.
     /// Defaults to the root volume `/` when none is provided.
     static func listSnapshots(for volumePath: String = "/") -> [APFSSnapshot] {
-        let output = runTmUtil(arguments: ["listlocalsnapshots", volumePath]) ?? ""
-        return output
+        return parseSnapshots(rawOutput: runner.run(arguments: ["listlocalsnapshots", volumePath]) ?? "",
+                              volumePath: volumePath)
+    }
+
+    /// Total reclaimable size, summed across all snapshots.  Best-effort.
+    static func totalSnapshotSize(for volumePath: String = "/") -> UInt64 {
+        // ponytail: tmutil doesn't report per-snapshot size on stock systems.
+        // A full accounting would call fs_snapshot_list (private) — left for the
+        // privileged helper. Return 0 so the UI shows "—".
+        return 0
+    }
+
+    // MARK: - Pure helpers (test seams)
+
+    /// Parses tmutil output into APFSSnapshot records. Pure function — no I/O.
+    /// ponytail: extracted so tests can drive parser behavior without faking a runner.
+    static func parseSnapshots(rawOutput: String, volumePath: String) -> [APFSSnapshot] {
+        return rawOutput
             .split(separator: "\n")
             .compactMap { line -> APFSSnapshot? in
                 let s = line.trimmingCharacters(in: .whitespaces)
@@ -48,43 +103,16 @@ enum APFSSnapshotService {
             }
     }
 
-    /// Total reclaimable size, summed across all snapshots.  Best-effort.
-    static func totalSnapshotSize(for volumePath: String = "/") -> UInt64 {
-        // ponytail: tmutil doesn't report per-snapshot size on stock systems.
-        // A full accounting would call fs_snapshot_list (private) — left for the
-        // privileged helper. Return 0 so the UI shows "—".
-        return 0
-    }
-
-    // MARK: - Helpers
-
-    private static func runTmUtil(arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tmutil")
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
-    }
-
-    private static func parseDate(from snapshotName: String) -> Date? {
+    /// Parses the date suffix on a snapshot name (e.g. "...2026-07-12-123456" → 2026-07-12 12:34:56).
+    static func parseDate(from snapshotName: String) -> Date? {
         // com.apple.TimeMachine.2026-07-12-123456 -> 2026-07-12 12:34:56
-        // tmutil uses YYYY-MM-DD-HHMMSS
+        // tmutil uses YYYY-MM-DD-HHMMSS; splitting on "-" yields 4 chunks.
         guard let range = snapshotName.range(of: "TimeMachine.") else { return nil }
         let stamp = String(snapshotName[range.upperBound...])  // 2026-07-12-123456
         let parts = stamp.split(separator: "-")
-        guard parts.count >= 6 else { return nil }
+        // ponytail: tmutil emits exactly 4 dash-separated chunks (Y-M-D-HHMMSS).
+        // Earlier versions of this guard required 6 chunks, breaking real inputs.
+        guard parts.count >= 4 else { return nil }
 
         guard let year = Int(parts[0]),
               let month = Int(parts[1]),
