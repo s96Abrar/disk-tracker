@@ -11,31 +11,11 @@ enum ExportService {
 
     // MARK: - Top-level entries
 
+    /// ponytail: thin overload — keeps the call site terse for callers that don't
+    /// care about formatter pinning (CLI, debug). Tests use the formatter-taking
+    /// form for determinism.
     static func exportJSON(root: DiskNode) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let node = SerializableNode.from(root, formatter: Self.defaultDateFormatter)
-        guard let data = try? encoder.encode(node),
-              let json = String(data: data, encoding: .utf8) else {
-            return "{}"
-        }
-        return json
-    }
-
-    static func exportCSV(root: DiskNode) -> String {
-        var lines: [String] = ["Path,Name,PhysicalSize,LogicalSize,Kind,ModDate"]
-        appendCSV(from: root, into: &lines, formatter: Self.defaultDateFormatter)
-        return lines.joined(separator: "\n")
-    }
-
-    // MARK: - Pure helpers (test seams)
-
-    /// ponytail: kept as a hook for tests that want a stable date format. The default
-    /// formatter is non-deterministic in earlier revisions; tests should pass their own.
-    static func exportCSV(root: DiskNode, formatter: DateFormatter) -> String {
-        var lines: [String] = ["Path,Name,PhysicalSize,LogicalSize,Kind,ModDate"]
-        appendCSV(from: root, into: &lines, formatter: formatter)
-        return lines.joined(separator: "\n")
+        exportJSON(root: root, formatter: defaultDateFormatter)
     }
 
     static func exportJSON(root: DiskNode, formatter: DateFormatter) -> String {
@@ -48,6 +28,18 @@ enum ExportService {
         }
         return json
     }
+
+    static func exportCSV(root: DiskNode) -> String {
+        exportCSV(root: root, formatter: defaultDateFormatter)
+    }
+
+    static func exportCSV(root: DiskNode, formatter: DateFormatter) -> String {
+        var lines: [String] = ["Path,Name,PhysicalSize,LogicalSize,Kind,ModDate"]
+        appendCSV(from: root, into: &lines, formatter: formatter)
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Pure helpers (test seams)
 
     /// One CSV row for `node`, or nil if `node` is a directory. ponytail: pure helper used
     /// by appendCSV; tests pin this so row format doesn't drift.
@@ -82,17 +74,21 @@ enum ExportService {
     }
 
     static func fileKindLabel(_ kind: FileKind) -> String {
-        switch kind {
-        case .image:       return "Image"
-        case .video:       return "Video"
-        case .audio:       return "Audio"
-        case .document:    return "Document"
-        case .archive:     return "Archive"
-        case .application: return "Application"
-        case .directory:   return "Directory"
-        case .other:       return "Other"
-        }
+        // ponytail: enum keys map 1:1 to label strings; the switch was a 9-line block
+        // for the same answer. Index into a static table.
+        Self.fileKindLabels[kind, default: "Other"]
     }
+
+    private static let fileKindLabels: [FileKind: String] = [
+        .image:       "Image",
+        .video:       "Video",
+        .audio:       "Audio",
+        .document:    "Document",
+        .archive:     "Archive",
+        .application: "Application",
+        .directory:   "Directory",
+        .other:       "Other",
+    ]
 
     static func csvEscape(_ s: String) -> String {
         if s.contains(",") || s.contains("\"") || s.contains("\n") {

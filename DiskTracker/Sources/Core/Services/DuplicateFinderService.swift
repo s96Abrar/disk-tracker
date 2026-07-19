@@ -74,43 +74,24 @@ enum DuplicateFinderService {
         in root: DiskNode,
         config: SmartFilterConfig = SmartFilterConfig()
     ) -> [DuplicateGroup] {
-        // 1. Collect all non-directory files
+        // 1. Collect all non-directory files.
         var allFiles: [DiskNode] = []
         collectFiles(from: root, config: config, into: &allFiles)
 
-        // 2. Bucket by physical size, skip singletons and tiny files
-        var sizeBuckets: [UInt64: [DiskNode]] = [:]
-        for file in allFiles {
-            guard file.physicalSize >= minFileSize else { continue }
-            sizeBuckets[file.physicalSize, default: []].append(file)
-        }
-        let candidates = sizeBuckets.filter { $0.value.count > 1 }
+        // 2. 3 steps: size-bucket (skip tiny + singletons), partial SHA, full SHA. Each
+        // step's "count > 1" filter is the same shape — extracted via the helpers below.
+        let sizeMatches = bucketsOf(allFiles, key: \.physicalSize)
+            .filter { $0.value.count > 1 && $0.key >= minFileSize }
+        guard !sizeMatches.isEmpty else { return [] }
 
-        guard !candidates.isEmpty else { return [] }
-
-        // 3. Partial-hash filter (first 64 KB)
-        var partialBuckets: [Data: [DiskNode]] = [:]
-        for (_, files) in candidates {
-            for file in files {
-                guard let partial = partialSHA256(url: URL(fileURLWithPath: file.path)) else { continue }
-                partialBuckets[partial, default: []].append(file)
-            }
-        }
-        let partialMatches = partialBuckets.filter { $0.value.count > 1 }
-
+        let partialMatches = hashedBuckets(sizeMatches, hash: partialSHA256(url:))
+            .filter { $0.value.count > 1 }
         guard !partialMatches.isEmpty else { return [] }
 
-        // 4. Full-hash confirmation; group duplicates
-        var fullToGroup: [Data: [DiskNode]] = [:]
-        for (_, files) in partialMatches {
-            for file in files {
-                guard let full = fullSHA256(url: URL(fileURLWithPath: file.path)) else { continue }
-                fullToGroup[full, default: []].append(file)
-            }
-        }
+        let fullBuckets = hashedBuckets(partialMatches, hash: fullSHA256(url:))
 
         var groups: [DuplicateGroup] = []
-        for (hash, nodes) in fullToGroup where nodes.count > 1 {
+        for (hash, nodes) in fullBuckets where nodes.count > 1 {
             let orig = nodes.max(by: { $0.modTimeSecs < $1.modTimeSecs })!
             let wasted = nodes.filter { $0.id != orig.id }.reduce(UInt64(0)) { $0 + $1.physicalSize }
             groups.append(DuplicateGroup(
@@ -127,15 +108,52 @@ enum DuplicateFinderService {
 
     /// SHA-256 of the first `partialReadSize` bytes. Returns the raw digest as `Data`.
     private static func partialSHA256(url: URL) -> Data? {
-        guard let data = contentSource.read(url: url, length: partialReadSize),
-              !data.isEmpty else { return nil }
-        return Data(SHA256.hash(data: data))
+        sha256(of: contentSource.read(url: url, length: partialReadSize))
     }
 
     /// Full-file SHA-256. Returns raw digest bytes.
     private static func fullSHA256(url: URL) -> Data? {
-        guard let data = contentSource.readAll(url: url), !data.isEmpty else { return nil }
+        sha256(of: contentSource.readAll(url: url))
+    }
+
+    /// ponytail: shared SHA-256 wrapper — nil for missing/empty input so the bucket
+    /// step silently drops unreadable files instead of two hand-written guards.
+    private static func sha256(of data: Data?) -> Data? {
+        guard let data, !data.isEmpty else { return nil }
         return Data(SHA256.hash(data: data))
+    }
+
+    // MARK: - Bucketing
+
+    /// Group a sequence by a hashable key (e.g. physicalSize).
+    private static func bucketsOf<T>(_ items: [T], key: KeyPath<T, UInt64>) -> [UInt64: [T]] {
+        var out: [UInt64: [T]] = [:]
+        for item in items { out[item[keyPath: key], default: []].append(item) }
+        return out
+    }
+
+    /// Re-bucket each input bucket by a content-derived hash. Items whose read fails
+    /// are dropped from their destination bucket (matches the "skip silently" intent
+    /// of the prior inline loops). ponytail: input key is `Hashable` so callers can
+    /// hand in either size-buckets (`UInt64`) or partial-hash buckets (`Data`).
+    private static func hashedBuckets<K: Hashable, T>(
+        _ buckets: [K: [T]],
+        hash: (URL) -> Data?
+    ) -> [Data: [T]] {
+        var out: [Data: [T]] = [:]
+        for (_, items) in buckets {
+            for item in items {
+                guard let urlHash = hash(URL(fileURLWithPath: pathFor(item))) else { continue }
+                out[urlHash, default: []].append(item)
+            }
+        }
+        return out
+    }
+
+    /// ponytail: only DiskNode flows through today; routed through one accessor so a
+    /// future caller type means a single line change, not every hash helper.
+    private static func pathFor<T>(_ item: T) -> String {
+        (item as? DiskNode)?.path ?? ""
     }
 
     // MARK: - Tree Traversal

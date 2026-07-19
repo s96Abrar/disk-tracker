@@ -42,59 +42,31 @@ enum AppBundleAnalyzer {
 
     /// Full structured breakdown for a single .app path.
     static func analyzeBundle(_ bundle: DiskNode) -> AppBundleBreakdown {
-        let path = bundle.path
-        var execSize: UInt64 = 0
-        var frameworks: [(name: String, size: UInt64)] = []
-        var resourceSize: UInt64 = 0
-        var pluginSize: UInt64 = 0
-        var otherSize: UInt64 = 0
-
+        let base = URL(fileURLWithPath: bundle.path)
         let fm = FileManager.default
-        let base = URL(fileURLWithPath: path)
 
-        // Executable — look inside Contents/MacOS
-        let macosDir = base.appendingPathComponent("Contents/MacOS")
-        if let macosChildren = try? fm.contentsOfDirectory(at: macosDir, includingPropertiesForKeys: [.fileSizeKey]) {
-            for child in macosChildren {
-                let attrs = try? child.resourceValues(forKeys: [.fileSizeKey])
-                execSize += UInt64(attrs?.fileSize ?? 0)
-            }
-        }
-
-        // Frameworks
-        let fwDir = base.appendingPathComponent("Contents/Frameworks")
-        if let fwChildren = try? fm.contentsOfDirectory(at: fwDir, includingPropertiesForKeys: [.fileSizeKey]) {
-            for child in fwChildren {
-                let attrs = try? child.resourceValues(forKeys: [.fileSizeKey])
-                let size = UInt64(attrs?.fileSize ?? 0)
-                frameworks.append((child.lastPathComponent, size))
-            }
-        }
-
-        // PlugIns
-        let plugDir = base.appendingPathComponent("Contents/PlugIns")
-        if let plugChildren = try? fm.contentsOfDirectory(at: plugDir, includingPropertiesForKeys: [.fileSizeKey]) {
-            for child in plugChildren {
-                let attrs = try? child.resourceValues(forKeys: [.fileSizeKey])
-                pluginSize += UInt64(attrs?.fileSize ?? 0)
-            }
-        }
+        // ponytail: 3 sibling directories share the same size-summing shape; the
+        // helper keeps sizes summing separate from per-item capture (Frameworks).
+        let execSize       = sumChildren(of: base.appendingPathComponent("Contents/MacOS"),     fm: fm)
+        let frameworkPairs: [(String, UInt64)] = sizedChildren(
+            of: base.appendingPathComponent("Contents/Frameworks"), fm: fm,
+            name: { $0.lastPathComponent })
+        let pluginSize     = sumChildren(of: base.appendingPathComponent("Contents/PlugIns"),    fm: fm)
 
         // Resources (Contents/Resources) — iterate recursively via DiskNode children
-        let resDir = base.appendingPathComponent("Contents/Resources")
-        bundle.children?.forEach { child in
-            if child.path.hasPrefix(resDir.path) {
-                resourceSize += child.physicalSize
-            }
-        }
+        let resDir = base.appendingPathComponent("Contents/Resources").path
+        let resourceSize: UInt64 = (bundle.children ?? [])
+            .filter { $0.path.hasPrefix(resDir) }
+            .reduce(0) { $0 + $1.physicalSize }
 
-        otherSize = bundle.physicalSize - execSize - frameworks.reduce(0, { $0 + $1.size }) - resourceSize - pluginSize
+        let frameworkTotal = frameworkPairs.reduce(UInt64(0)) { $0 + $1.1 }
+        let otherSize = bundle.physicalSize - execSize - frameworkTotal - resourceSize - pluginSize
 
         return AppBundleBreakdown(
-            path: path,
+            path: bundle.path,
             totalSize: bundle.physicalSize,
             executableSize: execSize,
-            frameworkSizes: frameworks,
+            frameworkSizes: frameworkPairs.map { (name: $0.0, size: $0.1) },
             resourceSize: resourceSize,
             pluginSize: pluginSize,
             otherSize: otherSize
@@ -123,5 +95,27 @@ enum AppBundleAnalyzer {
         }
 
         node.children?.forEach { findBundles(node: $0, config: config, threshold: threshold, into: &results) }
+    }
+
+    // MARK: - Bundle I/O Helpers
+
+    /// Total byte size of every regular child under `dir`. Returns 0 if missing/unreadable.
+    private static func sumChildren(of dir: URL, fm: FileManager) -> UInt64 {
+        sizedChildren(of: dir, fm: fm, name: { _ in "" }).reduce(0) { $0 + $1.1 }
+    }
+
+    /// `(name, size)` pairs for every regular child of `dir`. Empty on missing dir.
+    private static func sizedChildren(
+        of dir: URL,
+        fm: FileManager,
+        name: (URL) -> String
+    ) -> [(String, UInt64)] {
+        guard let urls = try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.fileSizeKey]
+        ) else { return [] }
+        return urls.map { url in
+            let attrs = try? url.resourceValues(forKeys: [.fileSizeKey])
+            return (name(url), UInt64(attrs?.fileSize ?? 0))
+        }
     }
 }
