@@ -15,7 +15,7 @@ struct NetworkVolume: Identifiable, Sendable {
     let type: VolumeType
     let host: String
 
-    enum VolumeType: String, Sendable {
+    enum VolumeType: String, Sendable, Equatable {
         case smb = "SMB"
         case afp = "AFP"
         case nfs = "NFS"
@@ -55,9 +55,9 @@ enum NetworkVolumeScanner {
                 continue
             }
 
-            let shareType = detectShareType(name: name, url: url)
+            let shareType = testDetectShareType(name: name, url: url)
             if shareType != .unknown {
-                let host = extractHostFromPath(url.path)
+                let host = testExtractHost(from: url.path)
                 volumes.append(NetworkVolume(
                     url: url,
                     name: name,
@@ -91,24 +91,20 @@ enum NetworkVolumeScanner {
                 return volumes
             }
 
-            for line in output.split(separator: "\n") {
-                if line.contains(" type nfs ") {
-                    let parts = line.split(separator: " ")
-                    if parts.count >= 4 {
-                        let mountPoint = String(parts[3])
-                        let url = URL(fileURLWithPath: mountPoint)
-                        let name = url.lastPathComponent
-                        let hostPath = String(parts[2])
-                        let host = hostPath.contains(":") ? String(hostPath.split(separator: ":")[0]) : hostPath
+            for line in output.split(separator: "\n") where line.contains(" type nfs ") {
+                let parts = line.split(separator: " ")
+                guard parts.count >= 4 else { continue }
+                let mountPoint = String(parts[3])
+                let url = URL(fileURLWithPath: mountPoint)
+                let hostPath = String(parts[2])
+                let host = hostPath.contains(":") ? String(hostPath.split(separator: ":")[0]) : hostPath
 
-                        volumes.append(NetworkVolume(
-                            url: url,
-                            name: name,
-                            type: .nfs,
-                            host: host
-                        ))
-                    }
-                }
+                volumes.append(NetworkVolume(
+                    url: url,
+                    name: url.lastPathComponent,
+                    type: .nfs,
+                    host: host
+                ))
             }
         } catch {
             // NFS not available
@@ -117,7 +113,9 @@ enum NetworkVolumeScanner {
         return volumes
     }
 
-    private static func detectShareType(name: String, url: URL) -> NetworkVolume.VolumeType {
+    /// Classify a `/Volumes/<name>` mount by name + URL.
+    /// ponytail: heuristic, not a NetBIOS-style probe. Fast, good enough for UI.
+    static func testDetectShareType(name: String, url: URL) -> NetworkVolume.VolumeType {
         let lowercased = name.lowercased()
 
         if lowercased.contains("smb") || lowercased.contains("cifs") ||
@@ -137,7 +135,8 @@ enum NetworkVolumeScanner {
         return .unknown
     }
 
-    private static func extractHostFromPath(_ path: String) -> String {
+    /// Extract the host portion of a `/Volumes/<host>/...` or UNC `//<host>/...` path.
+    static func testExtractHost(from path: String) -> String {
         if path.hasPrefix("/Volumes/") {
             let relative = String(path.dropFirst("/Volumes/".count))
             if let slashIndex = relative.firstIndex(of: "/") {

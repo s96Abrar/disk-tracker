@@ -42,4 +42,40 @@ final class NetworkVolumeScannerTests: XCTestCase {
         XCTAssertEqual(result.fileCount, 42)
         XCTAssertEqual(result.volume.name, "TestShare")
     }
+
+    // MARK: - Pure helper seams
+
+    func testDetectShareTypeSMBByName() {
+        let url = URL(fileURLWithPath: "/Volumes/share")
+        XCTAssertEqual(NetworkVolumeScanner.testDetectShareType(name: "Files (SMB)", url: url), .smb)
+        XCTAssertEqual(NetworkVolumeScanner.testDetectShareType(name: "CIFS Mount", url: url), .smb)
+    }
+
+    func testDetectShareTypeAFPByPath() {
+        let url = URL(fileURLWithPath: "/Volumes/AFPShare")
+        XCTAssertEqual(NetworkVolumeScanner.testDetectShareType(name: "AFPShare", url: url), .afp)
+    }
+
+    func testDetectShareTypeNFSByName() {
+        let url = URL(fileURLWithPath: "/Volumes/nfsdata")
+        XCTAssertEqual(NetworkVolumeScanner.testDetectShareType(name: "nfsdata", url: url), .nfs)
+    }
+
+    func testDetectShareTypeUnknownForLocalVolume() {
+        let url = URL(fileURLWithPath: "/Volumes/Macintosh HD")
+        XCTAssertEqual(NetworkVolumeScanner.testDetectShareType(name: "Macintosh HD", url: url), .unknown)
+    }
+
+    func testExtractHostFromStandardVolumePath() {
+        XCTAssertEqual(NetworkVolumeScanner.testExtractHost(from: "/Volumes/Server01/Data"), "Server01")
+        XCTAssertEqual(NetworkVolumeScanner.testExtractHost(from: "/Volumes/192.168.1.10"), "192.168.1.10")
+    }
+
+    func testExtractHostFromUncStylePath() {
+        XCTAssertEqual(NetworkVolumeScanner.testExtractHost(from: "//server/share"), "server")
+    }
+
+    func testExtractHostUnknownForUnrecognizedPath() {
+        XCTAssertEqual(NetworkVolumeScanner.testExtractHost(from: "/etc/hosts"), "Unknown")
+    }
 }
