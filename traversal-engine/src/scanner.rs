@@ -1,5 +1,4 @@
-//! `scanner.rs` — High-level scanner coordinating directory walking
-//! and work-stealing parallelism via Rayon.
+//! `scanner.rs` — High-level scanner for directory traversal.
 
 use crate::directory_walker;
 use crate::file_record::{append_to_string_table, FileRecord, NodeType};
@@ -66,54 +65,33 @@ pub fn scan_directory(
     on_progress: impl Fn(f64) + Send + Sync + 'static,
 ) -> Result<ScanResult, ScanError> {
     let state = Arc::new(ScanState::new(config));
-    
-    // Collect all directories first (breadth-first so progress is meaningful)
-    let mut todo: Vec<(PathBuf, u16)> = vec![(root_path.to_path_buf(), 0)];
-    let mut all_dirs = Vec::new();
-    
-    while let Some((path, depth)) = todo.pop() {
+
+    // BFS: process directories level by level so parent_id is always known.
+    // Each entry is (path, depth, parent_node_id).
+    let mut todo: Vec<(PathBuf, u16, u64)> = vec![(root_path.to_path_buf(), 0, 0)];
+
+    while let Some((path, depth, parent_id)) = todo.pop() {
         if state.cancelled.load(Ordering::Relaxed) {
             return Err(ScanError::Cancelled);
         }
-        all_dirs.push((path.clone(), depth));
-        
-        if state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth {
-            // Enumerate children; if it's a dir add to queue
-            if let Ok(entries) = directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
-                for entry in entries {
-                    if entry.is_dir {
-                        let mut child = PathBuf::from(&path);
-                        child.push(&entry.name);
-                        todo.push((child, depth + 1));
-                    }
-                }
-            }
-        }
-    }
-    
-    // Process all directories in parallel with Rayon
-    all_dirs.par_iter().for_each(|(path, depth)| {
-        if state.cancelled.load(Ordering::Relaxed) {
-            return;
-        }
-        
-        let entries = match directory_walker::walk_directory(path, state.config.exclude_hidden_files) {
+
+        let entries = match directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
             Ok(e) => e,
-            Err(_) => return,
+            Err(_) => continue,
         };
-        
+
         let mut records = state.results.lock().unwrap();
         let mut strings = state.string_table.lock().unwrap();
         let mut next_id = state.next_id.lock().unwrap();
-        
+
         for entry in entries {
             let name_offset = append_to_string_table(&mut strings, &entry.name);
             let node_id = *next_id;
             *next_id += 1;
-            
+
             let record = FileRecord {
                 node_id,
-                parent_id: 0, // root for MVP; will wire in Phase 2
+                parent_id,
                 name_offset,
                 name_len: entry.name.len() as u32,
                 logical_size: entry.size,
@@ -127,21 +105,49 @@ pub fn scan_directory(
                 },
                 is_system_protected: false,
                 mod_time_secs: entry.mtime,
-                depth: *depth,
+                depth,
                 child_count: 0,
                 first_child_id: 0,
                 padding: [0; 6],
             };
             records.push(record);
+
+            // Queue directory children for later processing
+            if entry.is_dir && (state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth) {
+                let mut child_path = PathBuf::from(&path);
+                child_path.push(&entry.name);
+                todo.push((child_path, depth + 1, node_id));
+            }
         }
-    });
-    
+    }
+
     on_progress(1.0);
-    
-    let records = state.results.lock().unwrap().clone();
+
+    // Fix child_count and first_child_id by building parent index
+    drop(todo);
+    let mut records = state.results.lock().unwrap();
+    let mut child_link: std::collections::HashMap<u64, (u64, u32)> = std::collections::HashMap::new();
+
+    for rec in records.iter() {
+        if rec.parent_id != 0 {
+            let entry = child_link.entry(rec.parent_id).or_insert((rec.node_id, 0));
+            entry.1 += 1;
+        }
+    }
+
+    for rec in records.iter_mut() {
+        if rec.parent_id != 0 {
+            if let Some((first_child_id, count)) = child_link.get(&rec.parent_id) {
+                rec.first_child_id = *first_child_id;
+                rec.child_count = *count;
+            }
+        }
+    }
+
     let string_table = state.string_table.lock().unwrap().clone();
-    
-    Ok(ScanResult { records, string_table })
+    let result_records = records.clone();
+
+    Ok(ScanResult { records: result_records, string_table })
 }
 
 #[derive(Debug)]

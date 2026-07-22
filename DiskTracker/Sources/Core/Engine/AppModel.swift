@@ -145,6 +145,9 @@ final class AppModel: ObservableObject, @unchecked Sendable {
     /// Free-space monitor for the scanned volume.
     var freeSpaceMonitor = FreeSpaceMonitor()
 
+    /// Rust scanner FFI bridge.
+    private let scanner = DirectoryScannerBridge()
+
     /// Phase 5: Duplicate groups from the last duplicate scan.
     var duplicateGroups: [DuplicateGroup] = []
 
@@ -232,18 +235,23 @@ final class AppModel: ObservableObject, @unchecked Sendable {
         guard case .idle = scanState else { return }
         scanState = .scanning(progress: 0.0)
 
-        // ponytail: synthetic tree until Rust FFI is wired. Real engine wiring
-        // is Phase 1 work; Phase 4 only needs a queryable tree to exercise filters.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let root = SyntheticScanBuilder.makeTree(path: path)
-            self.rootNode = root
-            self.activeSmartFilter = nil
-            self.smartFilterResults = []
-            let size = root.physicalSize
-            let count = self.treeStats.totalFiles + self.treeStats.totalDirectories
-            self.scanState = .completed(totalSize: size, fileCount: count)
-            self.startFreeSpaceMonitoring(for: URL(fileURLWithPath: path))
+            let rootNode = self.scanner.scan(path: path, config: ScanConfig())
+
+            DispatchQueue.main.async {
+                guard let rootNode = rootNode else {
+                    self.scanState = .failed(error: "Scan failed")
+                    return
+                }
+                self.rootNode = rootNode
+                self.activeSmartFilter = nil
+                self.smartFilterResults = []
+                let size = rootNode.physicalSize
+                let count = self.treeStats.totalFiles + self.treeStats.totalDirectories
+                self.scanState = .completed(totalSize: size, fileCount: count)
+                self.startFreeSpaceMonitoring(for: URL(fileURLWithPath: path))
+            }
         }
     }
 
