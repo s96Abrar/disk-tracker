@@ -2,7 +2,7 @@
 //  DirectoryListView.swift
 //  DiskTracker
 //
-//  Phase 2: Enhanced directory list with OutlineGroup and size columns.
+//  Phase 3: Recursive directory list rendering from DiskNode tree.
 //
 
 import SwiftUI
@@ -11,53 +11,53 @@ struct DirectoryListView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        // Phase 3: Will use model.rootNode with OutlineGroup
-        // For now, show demo data
-        List {
-            Section {
-                ForEach(demoItems) { item in
-                    DirectoryRowView(item: item, model: model)
+        if let root = model.rootNode {
+            List {
+                Section {
+                    if let children = root.children {
+                        ForEach(children, id: \.id) { child in
+                            DirectoryRowView(node: child, model: model)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Name")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Size")
+                            .frame(width: 100, alignment: .trailing)
+                        Text("Items")
+                            .frame(width: 60, alignment: .trailing)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
                 }
-            } header: {
-                HStack {
-                    Text("Name")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Size")
-                        .frame(width: 100, alignment: .trailing)
-                    Text("Items")
-                        .frame(width: 60, alignment: .trailing)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 4)
             }
+            .listStyle(.inset)
+            .background(Color(nsColor: .textBackgroundColor))
+        } else {
+            VStack(spacing: 12) {
+                Spacer()
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+                Text("No scan data")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Text("Scan a folder to see directory contents")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color(nsColor: .textBackgroundColor))
         }
-        .listStyle(.inset)
-        .background(Color(nsColor: .textBackgroundColor))
-    }
-
-    private var demoItems: [DemoItem] {
-        [
-            DemoItem(name: "Home", path: "/Users/abrar", size: 42_000_000_000, itemCount: 128_000, kind: .directory, depth: 0),
-            DemoItem(name: "Applications", path: "/Applications", size: 15_000_000_000, itemCount: 450, kind: .application, depth: 0),
-            DemoItem(name: "Library", path: "/Library", size: 8_000_000_000, itemCount: 25_000, kind: .directory, depth: 0),
-            DemoItem(name: "System", path: "/System", size: 12_000_000_000, itemCount: 15_000, kind: .directory, depth: 0),
-        ]
     }
 }
 
-struct DemoItem: Identifiable {
-    let id = UUID()
-    let name: String
-    let path: String
-    let size: UInt64
-    let itemCount: Int
-    let kind: FileKind
-    let depth: Int
-}
-
+/// Row renders a single DiskNode with depth indent, expand/collapse, and recursive children.
 struct DirectoryRowView: View {
-    let item: DemoItem
+    let node: DiskNode
     @ObservedObject var model: AppModel
     @State private var isExpanded = false
 
@@ -74,16 +74,22 @@ struct DirectoryRowView: View {
         }
     }
 
+    /// Count children recursively for "Items" column.
+    private func childCount(of node: DiskNode) -> Int {
+        guard let children = node.children, !children.isEmpty else { return 0 }
+        return children.count + children.reduce(0) { $0 + childCount(of: $1) }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             // Indent based on depth
-            if item.depth > 0 {
+            if node.depth > 0 {
                 Spacer()
-                    .frame(width: CGFloat(item.depth * 16))
+                    .frame(width: CGFloat(node.depth * 16))
             }
 
-            // Expand/collapse for directories
-            if item.kind == .directory {
+            // Expand/collapse for directories with children
+            if node.fileKind == .directory && !(node.children?.isEmpty ?? true) {
                 Button {
                     isExpanded.toggle()
                 } label: {
@@ -100,20 +106,20 @@ struct DirectoryRowView: View {
 
             // Icon
             Circle()
-                .fill(colorForKind(item.kind))
+                .fill(colorForKind(node.fileKind))
                 .frame(width: 20, height: 20)
                 .overlay(
-                    Image(systemName: iconForKind(item.kind))
+                    Image(systemName: iconForKind(node.fileKind))
                         .font(.system(size: 10))
                         .foregroundStyle(.white)
                 )
 
             // Name
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
+                Text(node.name)
                     .font(.body)
                     .lineLimit(1)
-                Text(item.path)
+                Text(node.path)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -121,13 +127,13 @@ struct DirectoryRowView: View {
 
             Spacer()
 
-            // Size
-            Text(formatBytes(item.size))
+            // Size (physical)
+            Text(formatBytes(node.physicalSize))
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
 
-            // Item count
-            Text("\(item.itemCount)")
+            // Item count (recursive children only for directories)
+            Text(node.fileKind == .directory ? "\(childCount(of: node))" : "—")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.tertiary)
                 .frame(width: 60, alignment: .trailing)
@@ -135,7 +141,14 @@ struct DirectoryRowView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture {
-            // Select this item
+            model.selectNode(node)
+        }
+
+        // Recursive children when expanded
+        if isExpanded, let children = node.children {
+            ForEach(children) { child in
+                DirectoryRowView(node: child, model: model)
+            }
         }
     }
 

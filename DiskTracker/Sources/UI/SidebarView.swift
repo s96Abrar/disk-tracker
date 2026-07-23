@@ -41,14 +41,24 @@ struct SidebarView: View {
                 }
             }
 
-            // Scan history
+            // Scan history (wired via ScanHistoryService)
             Section("History") {
-                if let lastScan = model.lastScanDate {
+                if let last = model.scanHistory.mostRecentScan {
                     HStack {
                         Image(systemName: "clock")
                         VStack(alignment: .leading) {
-                            Text(lastScan, style: .relative)
+                            Text(last.scanDate, style: .relative)
                             Text("Last scan")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    HStack {
+                        Image(systemName: "list.bullet")
+                        VStack(alignment: .leading) {
+                            Text("\(model.scanHistory.entries.count) scans")
+                                .font(.caption)
+                            Text("\(formatBytes(model.scanHistory.totalBytesScanned)) total")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -97,16 +107,16 @@ struct SidebarView: View {
                 }
             }
 
-            // File type breakdown (when scan complete)
+            // File type breakdown from real tree stats (was hardcoded dummy data)
             if case .completed = model.scanState {
                 Section("Breakdown") {
-                    FileTypeRow(kind: .directory, size: 12_000_000_000, color: Color(hex: "2C3E50"))
-                    FileTypeRow(kind: .image, size: 8_000_000_000, color: Color(hex: "FF6B6B"))
-                    FileTypeRow(kind: .video, size: 6_000_000_000, color: Color(hex: "9B59B6"))
-                    FileTypeRow(kind: .document, size: 3_000_000_000, color: Color(hex: "3498DB"))
-                    FileTypeRow(kind: .application, size: 5_000_000_000, color: Color(hex: "E74C3C"))
-                    FileTypeRow(kind: .archive, size: 2_000_000_000, color: Color(hex: "27AE60"))
-                    FileTypeRow(kind: .other, size: 6_000_000_000, color: Color(hex: "95A5A6"))
+                    FileTypeRow(kind: .directory, size: model.treeStats.fileTypeSizes[.directory] ?? 0, color: Color(hex: "2C3E50"))
+                    FileTypeRow(kind: .image, size: model.treeStats.fileTypeSizes[.image] ?? 0, color: Color(hex: "FF6B6B"))
+                    FileTypeRow(kind: .video, size: model.treeStats.fileTypeSizes[.video] ?? 0, color: Color(hex: "9B59B6"))
+                    FileTypeRow(kind: .document, size: model.treeStats.fileTypeSizes[.document] ?? 0, color: Color(hex: "3498DB"))
+                    FileTypeRow(kind: .application, size: model.treeStats.fileTypeSizes[.application] ?? 0, color: Color(hex: "E74C3C"))
+                    FileTypeRow(kind: .archive, size: model.treeStats.fileTypeSizes[.archive] ?? 0, color: Color(hex: "27AE60"))
+                    FileTypeRow(kind: .other, size: model.treeStats.fileTypeSizes[.other] ?? 0, color: Color(hex: "95A5A6"))
                 }
             }
         }
@@ -226,13 +236,5 @@ struct FileTypeRow: View {
 
     private func formatBytes(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-    }
-}
-
-// Extension for last scan date
-extension AppModel {
-    var lastScanDate: Date? {
-        // TODO: Load from UserDefaults or DuckDB
-        nil
     }
 }

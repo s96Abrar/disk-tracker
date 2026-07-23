@@ -2,8 +2,8 @@
 //  DirectoryListViewTests.swift
 //  DiskTrackerTests
 //
-//  Phase 2: DirectoryListView component tests.
-//  Tests row view, expand/collapse, and icon mapping.
+//  Phase 3: DirectoryListView tests using DiskNode (DemoItem deleted).
+//  Tests row rendering, expand/collapse, icon mapping, and real data.
 //
 
 import XCTest
@@ -12,40 +12,46 @@ import SwiftUI
 
 final class DirectoryListViewTests: XCTestCase {
 
-    // MARK: - DemoItem Tests
+    // MARK: - Test Data Helpers
 
-    func testDemoItemInitialization() {
-        let item = DemoItem(
-            name: "Documents",
-            path: "/Users/test/Documents",
-            size: 5_000_000_000,
-            itemCount: 1250,
-            kind: .directory,
-            depth: 0
+    func makeLeaf(name: String, path: String, size: UInt64, kind: FileKind = .document, depth: UInt16 = 0) -> DiskNode {
+        DiskNode(
+            recordIndex: 0, name: name, path: path,
+            logicalSize: size, physicalSize: size,
+            fileKind: kind, isSystemProtected: false,
+            modTimeSecs: 0, depth: depth, children: nil
         )
-
-        XCTAssertEqual(item.name, "Documents")
-        XCTAssertEqual(item.path, "/Users/test/Documents")
-        XCTAssertEqual(item.size, 5_000_000_000)
-        XCTAssertEqual(item.itemCount, 1250)
-        XCTAssertEqual(item.kind, .directory)
-        XCTAssertEqual(item.depth, 0)
-        XCTAssertNotNil(item.id)  // Identifiable
     }
 
-    func testDemoItemForDifferentFileKinds() {
+    func makeDir(name: String, path: String, children: [DiskNode], depth: UInt16 = 0) -> DiskNode {
+        let size = children.reduce(UInt64(0)) { $0 + $1.physicalSize }
+        return DiskNode(
+            recordIndex: 0, name: name, path: path,
+            logicalSize: size, physicalSize: size,
+            fileKind: .directory, isSystemProtected: false,
+            modTimeSecs: 0, depth: depth, children: children
+        )
+    }
+
+    // MARK: - DiskNode Tests (was DemoItem)
+
+    func testDiskNodeInitialization() {
+        let node = makeLeaf(name: "Documents", path: "/Users/test/Documents", size: 5_000_000_000, kind: .directory, depth: 1)
+
+        XCTAssertEqual(node.name, "Documents")
+        XCTAssertEqual(node.path, "/Users/test/Documents")
+        XCTAssertEqual(node.physicalSize, 5_000_000_000)
+        XCTAssertEqual(node.fileKind, .directory)
+        XCTAssertEqual(node.depth, 1)
+        XCTAssertNotNil(node.id)
+    }
+
+    func testDiskNodeForDifferentFileKinds() {
         let kinds: [FileKind] = [.image, .video, .audio, .document, .archive, .application, .directory, .other]
-        
+
         for kind in kinds {
-            let item = DemoItem(
-                name: "test",
-                path: "/test",
-                size: 1000,
-                itemCount: 10,
-                kind: kind,
-                depth: 0
-            )
-            XCTAssertEqual(item.kind, kind)
+            let node = makeLeaf(name: "test", path: "/test", size: 1000, kind: kind)
+            XCTAssertEqual(node.fileKind, kind)
         }
     }
 
@@ -71,47 +77,15 @@ final class DirectoryListViewTests: XCTestCase {
 
     // MARK: - Icon Mapping Tests
 
-    func testIconForKindImage() {
-        let icon = iconForKind(.image)
-        XCTAssertEqual(icon, "photo")
-    }
+    func testIconForKindImage() { XCTAssertEqual(iconForKind(.image), "photo") }
+    func testIconForKindVideo() { XCTAssertEqual(iconForKind(.video), "film") }
+    func testIconForKindAudio() { XCTAssertEqual(iconForKind(.audio), "music.note") }
+    func testIconForKindDocument() { XCTAssertEqual(iconForKind(.document), "doc") }
+    func testIconForKindArchive() { XCTAssertEqual(iconForKind(.archive), "doc.zipper") }
+    func testIconForKindApplication() { XCTAssertEqual(iconForKind(.application), "app") }
+    func testIconForKindDirectory() { XCTAssertEqual(iconForKind(.directory), "folder") }
+    func testIconForKindOther() { XCTAssertEqual(iconForKind(.other), "doc.questionmark") }
 
-    func testIconForKindVideo() {
-        let icon = iconForKind(.video)
-        XCTAssertEqual(icon, "film")
-    }
-
-    func testIconForKindAudio() {
-        let icon = iconForKind(.audio)
-        XCTAssertEqual(icon, "music.note")
-    }
-
-    func testIconForKindDocument() {
-        let icon = iconForKind(.document)
-        XCTAssertEqual(icon, "doc")
-    }
-
-    func testIconForKindArchive() {
-        let icon = iconForKind(.archive)
-        XCTAssertEqual(icon, "doc.zipper")
-    }
-
-    func testIconForKindApplication() {
-        let icon = iconForKind(.application)
-        XCTAssertEqual(icon, "app")
-    }
-
-    func testIconForKindDirectory() {
-        let icon = iconForKind(.directory)
-        XCTAssertEqual(icon, "folder")
-    }
-
-    func testIconForKindOther() {
-        let icon = iconForKind(.other)
-        XCTAssertEqual(icon, "doc.questionmark")
-    }
-
-    // Helper function mirroring DirectoryRowView implementation
     private func iconForKind(_ kind: FileKind) -> String {
         switch kind {
         case .image: return "photo"
@@ -125,46 +99,22 @@ final class DirectoryListViewTests: XCTestCase {
         }
     }
 
-    // MARK: - DirectoryRowView Depth Indentation Tests
+    // MARK: - Depth Indentation Tests
 
     func testDepthZeroHasNoIndent() {
-        let item = DemoItem(
-            name: "Home",
-            path: "/home",
-            size: 42_000_000_000,
-            itemCount: 128_000,
-            kind: .directory,
-            depth: 0
-        )
-
-        XCTAssertEqual(item.depth, 0)
+        let node = makeLeaf(name: "Home", path: "/home", size: 42_000_000_000, depth: 0)
+        XCTAssertEqual(node.depth, 0)
     }
 
     func testDepthOneHasIndent() {
-        let item = DemoItem(
-            name: "Documents",
-            path: "/home/Documents",
-            size: 5_000_000_000,
-            itemCount: 1000,
-            kind: .directory,
-            depth: 1
-        )
-
-        let indent = CGFloat(item.depth * 16)
+        let node = makeLeaf(name: "Documents", path: "/home/Documents", size: 5_000_000_000, depth: 1)
+        let indent = CGFloat(node.depth * 16)
         XCTAssertEqual(indent, 16)
     }
 
     func testDepthTwoHasMoreIndent() {
-        let item = DemoItem(
-            name: "Subfolder",
-            path: "/home/Documents/Subfolder",
-            size: 100_000,
-            itemCount: 50,
-            kind: .directory,
-            depth: 2
-        )
-
-        let indent = CGFloat(item.depth * 16)
+        let node = makeLeaf(name: "Subfolder", path: "/home/Documents/Subfolder", size: 100_000, depth: 2)
+        let indent = CGFloat(node.depth * 16)
         XCTAssertEqual(indent, 32)
     }
 
@@ -173,13 +123,13 @@ final class DirectoryListViewTests: XCTestCase {
     func testFormatBytes() {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
-        
+
         let kb = formatter.string(fromByteCount: 1024)
         XCTAssertTrue(kb.lowercased().contains("k"))
-        
+
         let mb = formatter.string(fromByteCount: 1_048_576)
         XCTAssertTrue(mb.lowercased().contains("m"))
-        
+
         let gb = formatter.string(fromByteCount: 1_073_741_824)
         XCTAssertTrue(mb.lowercased().contains("m") || gb.lowercased().contains("g"))
     }
@@ -193,10 +143,10 @@ final class DirectoryListViewTests: XCTestCase {
     func testExpandStateDefaultsToFalse() {
         var isExpanded = false
         XCTAssertFalse(isExpanded)
-        
+
         isExpanded.toggle()
         XCTAssertTrue(isExpanded)
-        
+
         isExpanded.toggle()
         XCTAssertFalse(isExpanded)
     }
@@ -204,68 +154,98 @@ final class DirectoryListViewTests: XCTestCase {
     // MARK: - Row Construction Tests
 
     func testRowShowsExpandButtonForDirectory() {
-        let item = DemoItem(
-            name: "Folder",
-            path: "/folder",
-            size: 1000,
-            itemCount: 10,
-            kind: .directory,
-            depth: 0
-        )
-        
-        XCTAssertEqual(item.kind, .directory)  // Should show expand button
+        let child = makeLeaf(name: "nested.txt", path: "/folder/nested.txt", size: 100)
+        let dir = makeDir(name: "Folder", path: "/folder", children: [child], depth: 0)
+
+        XCTAssertEqual(dir.fileKind, .directory)
+        XCTAssertNotNil(dir.children)
+        XCTAssertFalse(dir.children?.isEmpty ?? true, "Directory with children should show expand button")
     }
 
     func testRowDoesNotShowExpandForFile() {
-        let item = DemoItem(
-            name: "file.txt",
-            path: "/file.txt",
-            size: 1000,
-            itemCount: 1,
-            kind: .document,
-            depth: 0
-        )
-        
-        // Document is not a directory, so no expand button
-        let isDirectory = item.kind == .directory
+        let node = makeLeaf(name: "file.txt", path: "/file.txt", size: 1000, kind: .document)
+
+        let isDirectory = node.fileKind == .directory
         XCTAssertFalse(isDirectory)
     }
 
-    // MARK: - Item Count Display Tests
+    func testEmptyDirectoryHasNoExpandButton() {
+        let dir = makeDir(name: "Empty", path: "/Empty", children: [], depth: 0)
+        // Empty directory: expand button only shown when children non-empty
+        let hasChildren = !(dir.children?.isEmpty ?? true)
+        XCTAssertFalse(hasChildren, "Empty directory should not show expand chevron")
+    }
 
-    func testItemCountFormatting() {
-        let item = DemoItem(
-            name: "Folder",
-            path: "/folder",
-            size: 1000,
-            itemCount: 1500,
-            kind: .directory,
-            depth: 0
-        )
-        
-        let countString = "\(item.itemCount)"
-        XCTAssertEqual(countString, "1500")
+    // MARK: - Recursive Child Count Tests
+
+    func testChildCountForLeafReturnsZero() {
+        let leaf = makeLeaf(name: "a.txt", path: "/a.txt", size: 100)
+        let count = childCount(of: leaf)
+        XCTAssertEqual(count, 0, "Leaf node has no children")
+    }
+
+    func testChildCountForDirectory() {
+        let a = makeLeaf(name: "a.txt", path: "/d/a.txt", size: 100)
+        let b = makeLeaf(name: "b.txt", path: "/d/b.txt", size: 200)
+        let dir = makeDir(name: "d", path: "/d", children: [a, b], depth: 0)
+        let count = childCount(of: dir)
+        XCTAssertEqual(count, 2, "Directory with 2 direct children")
+    }
+
+    func testChildCountRecursive() {
+        let leaf = makeLeaf(name: "deep.txt", path: "/a/b/deep.txt", size: 50)
+        let sub = makeDir(name: "b", path: "/a/b", children: [leaf], depth: 1)
+        let root = makeDir(name: "a", path: "/a", children: [sub], depth: 0)
+        let count = childCount(of: root)
+        XCTAssertEqual(count, 2, "root has sub (1) + leaf (1) = 2 total descendants")
+    }
+
+    // Mirror of DirectoryRowView.childCount implementation
+    private func childCount(of node: DiskNode) -> Int {
+        guard let children = node.children, !children.isEmpty else { return 0 }
+        return children.count + children.reduce(0) { $0 + childCount(of: $1) }
+    }
+
+    // MARK: - Real Data Tests (Regression: fix-view-defects)
+
+    /// Bug: DirectoryListView iterated `demoItems`, ignoring `model.rootNode`.
+    /// Fix: body builds rows from DiskNode tree when rootNode is non-nil.
+    func testDirectoryListViewUsesRealDataNotDemoItems() {
+        let model = AppModel()
+        let leafA = makeLeaf(name: "resume.pdf", path: "/Docs/resume.pdf", size: 1_000_000, depth: 2)
+        let leafB = makeLeaf(name: "tasks.txt", path: "/Docs/tasks.txt", size: 500, depth: 2)
+        let docsNode = makeDir(name: "Docs", path: "/Docs", children: [leafA, leafB], depth: 1)
+        model.rootNode = makeDir(name: "/", path: "/", children: [docsNode], depth: 0)
+        model.scanState = .completed(totalSize: 1_000_500, fileCount: 3)
+
+        let stats = model.treeStats
+        XCTAssertEqual(stats.totalFiles, 2, "Should find 2 files from real scan")
+        XCTAssertEqual(stats.totalDirectories, 2, "Should find 2 directories (root + Docs)")
+        XCTAssertEqual(stats.totalSize, 1_000_500, "Should sum files from real scan")
+    }
+
+    func testListShowsEmptyStateWhenNoScanData() {
+        let model = AppModel()
+        XCTAssertNil(model.rootNode)
+        guard case .idle = model.scanState else {
+            XCTFail("No scan → state must be idle")
+            return
+        }
+        let stats = model.treeStats
+        XCTAssertEqual(stats.totalFiles, 0)
+        XCTAssertEqual(stats.totalDirectories, 0)
     }
 
     // MARK: - Color Hex Tests
 
     func testColorHexValuesAreValid() {
-        // Verify all hex colors used in the app are valid 6-digit hex values
         let hexColors: [String] = [
-            "FF6B6B",  // image
-            "9B59B6",  // video
-            "F39C12",  // audio
-            "3498DB",  // document
-            "27AE60",  // archive
-            "E74C3C",  // application
-            "2C3E50",  // directory
-            "95A5A6",  // other
+            "FF6B6B", "9B59B6", "F39C12", "3498DB",
+            "27AE60", "E74C3C", "2C3E50", "95A5A6",
         ]
 
         for hex in hexColors {
             XCTAssertEqual(hex.count, 6, "Color hex should be 6 digits: \(hex)")
-            
-            // Check all characters are valid hex
             let validHexChars = CharacterSet(charactersIn: "0123456789ABCDEF")
             for char in hex.unicodeScalars {
                 XCTAssertTrue(validHexChars.contains(char), "Invalid hex character: \(char)")

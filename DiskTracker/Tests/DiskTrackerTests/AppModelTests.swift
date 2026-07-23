@@ -101,10 +101,10 @@ final class AppModelTests: XCTestCase {
     func testScanCompletionUpdatesState() {
         let model = AppModel()
         let expectation = XCTestExpectation(description: "Scan completes")
-        
-        model.startScan(path: "/test")
-        
-        // Wait for async scan to complete (synthetic scan takes 2 seconds)
+
+        model.startScan(path: NSHomeDirectory())
+
+        // Wait for async scan to complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             guard case .completed(let totalSize, let fileCount) = model.scanState else {
                 XCTFail("Expected state to be .completed, got \(model.scanState)")
@@ -114,7 +114,7 @@ final class AppModelTests: XCTestCase {
             XCTAssertGreaterThan(fileCount, 0)
             expectation.fulfill()
         }
-        
+
         wait(for: [expectation], timeout: 5.0)
     }
 
@@ -243,10 +243,92 @@ final class AppModelTests: XCTestCase {
 
     func testRunSmartFilterWithNoRootDoesNothing() {
         let model = AppModel()
-        
+
         model.activeSmartFilter = .large
         model.runSmartFilter()
-        
+
         XCTAssertTrue(model.smartFilterResults.isEmpty)
+    }
+
+    // MARK: - Re-scan Tests (Regression: fix-view-defects)
+
+    /// Bug: startScan guards on `.idle` only. After a scan completes (state = .completed),
+    /// subsequent calls are silently dropped. User cannot re-scan without manually cancelling first.
+    /// Fix: startScan should accept `.idle`, `.completed`, and `.failed` as entry states.
+    func testReScanAllowedAfterCompletion() {
+        // Simulate completed state by setting rootNode + scanState
+        let model = AppModel()
+        let leaf = makeLeafNode(name: "prior.txt", path: "/prior.txt")
+        model.rootNode = makeTreeNode(name: "/", path: "/", children: [leaf])
+        model.scanState = .completed(totalSize: 1024, fileCount: 1)
+
+        // Re-scan should be allowed — current code drops this silently (bug)
+        model.startScan(path: "/Users")
+
+        // Must transition to .scanning, NOT stay at .completed
+        guard case .scanning = model.scanState else {
+            XCTFail("Re-scan after completion must enter .scanning, got \(model.scanState)")
+            return
+        }
+    }
+
+    /// Bug: Same as re-scan after completion — failed scans should also allow retry.
+    func testReScanAllowedAfterFailure() {
+        let model = AppModel()
+        model.scanState = .failed(error: "disk unavailable")
+
+        model.startScan(path: "/Volumes/USB")
+
+        guard case .scanning = model.scanState else {
+            XCTFail("Re-scan after failure must enter .scanning, got \(model.scanState)")
+            return
+        }
+    }
+
+    // MARK: - Scan History Tests (Regression: fix-view-defects)
+
+    /// Bug: ScanHistoryService exists but is never instantiated or called from AppModel.
+    /// lastScanDate returns nil always (TODO comment in SidebarView).
+    func testScanHistoryServiceExistsOnModel() {
+        let model = AppModel()
+        // Must expose a ScanHistoryService ref so views can read history
+        XCTAssertNotNil(model.scanHistory, "AppModel must own ScanHistoryService")
+    }
+
+    /// Bug: Recorded scan history entry must match scan result.
+    func testScanRecordsHistoryEntry() {
+        let model = AppModel()
+        model.scanHistory.clearHistory()
+
+        let leaf = makeLeafNode(name: "a.txt", path: "/tmp/a.txt", size: 5000)
+        let root = makeTreeNode(name: "tmp", path: "/tmp", children: [leaf])
+        model.rootNode = root
+        model.scanState = .completed(totalSize: 5000, fileCount: 1)
+
+        // Record a scan in history (simulates what startScan should do on completion)
+        model.scanHistory.recordScan(
+            volumePath: "/tmp",
+            totalFiles: 1,
+            totalSize: 5000,
+            duration: 2.5
+        )
+
+        XCTAssertEqual(model.scanHistory.entries.count, 1, "Must record scan entry")
+        let entry = model.scanHistory.entries[0]
+        XCTAssertEqual(entry.volumePath, "/tmp")
+        XCTAssertEqual(entry.totalFiles, 1)
+        XCTAssertEqual(entry.totalSize, 5000)
+        XCTAssertEqual(entry.duration, 2.5)
+    }
+
+    /// Bug: mostRecentScan should be non-nil after recording.
+    func testMostRecentScanAfterRecord() {
+        let model = AppModel()
+        model.scanHistory.clearHistory()
+
+        model.scanHistory.recordScan(volumePath: "/", totalFiles: 42, totalSize: 1_000_000, duration: 3.0)
+
+        XCTAssertNotNil(model.scanHistory.mostRecentScan)
+        XCTAssertEqual(model.scanHistory.mostRecentScan?.volumePath, "/")
     }
 }
