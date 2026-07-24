@@ -145,6 +145,9 @@ final class AppModel: ObservableObject, @unchecked Sendable {
     /// Free-space monitor for the scanned volume.
     var freeSpaceMonitor = FreeSpaceMonitor()
 
+    /// Scan history service (persists to UserDefaults).
+    var scanHistory = ScanHistoryService()
+
     /// Rust scanner FFI bridge.
     private let scanner = DirectoryScannerBridge()
 
@@ -232,12 +235,18 @@ final class AppModel: ObservableObject, @unchecked Sendable {
     // MARK: - Scanning
 
     func startScan(path: String) {
-        guard case .idle = scanState else { return }
+        // ponytail: allow re-scan from idle, completed, or failed state.
+        switch scanState {
+        case .idle, .completed, .failed: break
+        case .scanning: return  // only block during active scan
+        }
         scanState = .scanning(progress: 0.0)
+        let startTime = Date()
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let rootNode = self.scanner.scan(path: path, config: ScanConfig())
+            let duration = Date().timeIntervalSince(startTime)
 
             DispatchQueue.main.async {
                 guard let rootNode = rootNode else {
@@ -250,6 +259,12 @@ final class AppModel: ObservableObject, @unchecked Sendable {
                 let size = rootNode.physicalSize
                 let count = self.treeStats.totalFiles + self.treeStats.totalDirectories
                 self.scanState = .completed(totalSize: size, fileCount: count)
+                self.scanHistory.recordScan(
+                    volumePath: path,
+                    totalFiles: count,
+                    totalSize: size,
+                    duration: duration
+                )
                 self.startFreeSpaceMonitoring(for: URL(fileURLWithPath: path))
             }
         }
