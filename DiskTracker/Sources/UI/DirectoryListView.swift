@@ -38,7 +38,7 @@ struct DirectoryListView: View {
 
     private var demoItems: [DemoItem] {
         [
-            DemoItem(name: "Home", path: "/Users/abrar", size: 42_000_000_000, itemCount: 128_000, kind: .directory, depth: 0),
+            DemoItem(name: "Home", path: FileManager.default.homeDirectoryForCurrentUser.path, size: 42_000_000_000, itemCount: 128_000, kind: .directory, depth: 0),
             DemoItem(name: "Applications", path: "/Applications", size: 15_000_000_000, itemCount: 450, kind: .application, depth: 0),
             DemoItem(name: "Library", path: "/Library", size: 8_000_000_000, itemCount: 25_000, kind: .directory, depth: 0),
             DemoItem(name: "System", path: "/System", size: 12_000_000_000, itemCount: 15_000, kind: .directory, depth: 0),

@@ -21,9 +21,9 @@ targets:
     sources:
       - path: Sources
         type: group
-    resources:
-      - path: Resources/Info.plist
-      - path: Resources/DiskTracker.entitlements
+      - path: Binaries/disk-tracker-engine
+        type: file
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.disktracker.app

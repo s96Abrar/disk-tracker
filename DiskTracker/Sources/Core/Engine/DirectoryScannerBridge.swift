@@ -10,6 +10,58 @@
 import Foundation
 import os.log
 
+// MARK: - Logger
+
+private enum LogLevel: String {
+    case debug   = "DEBUG"
+    case info    = "INFO"
+    case warning = "WARNING"
+    case error   = "ERROR"
+    case fault   = "FAULT"
+
+    var osType: OSLogType {
+        switch self {
+        case .debug:   return .debug
+        case .info:    return .info
+        case .warning: return .default
+        case .error:   return .error
+        case .fault:   return .fault
+        }
+    }
+}
+
+private struct Logger {
+    private let oslog: OSLog
+    private let category: String
+
+    init(category: String) {
+        self.oslog = OSLog(subsystem: "com.disktracker", category: category)
+        self.category = category
+    }
+
+    private func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter.string(from: Date())
+    }
+
+    private func log(_ level: LogLevel, _ message: String, file: String = #file, function: String = #function, line: Int = #line) {
+        let filename = (file as NSString).lastPathComponent
+        let entry = "[\(timestamp())] [\(level.rawValue)] [\(category)] \(filename):\(line) \(function) — \(message)"
+        os_log("%{public}@", log: oslog, type: level.osType, entry)
+    }
+
+    func debug(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.debug, message, file: file, function: function, line: line) }
+    func info(_ message: String, file: String = #file, function: String = #function, line: Int = #line)  { log(.info, message, file: file, function: function, line: line) }
+    func warning(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.warning, message, file: file, function: function, line: line) }
+    func error(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.error, message, file: file, function: function, line: line) }
+    func fault(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.fault, message, file: file, function: function, line: line) }
+}
+
+private let log = Logger(category: "bridge")
+
+// MARK: - ScanConfig
+
 /// Scan configuration.
 struct ScanConfig {
     var excludeSystemPaths: Bool = true
@@ -20,7 +72,6 @@ struct ScanConfig {
 
 /// High-level scanner bridge. Calls Rust CLI as subprocess.
 final class DirectoryScannerBridge: @unchecked Sendable {
-    private let log = OSLog(subsystem: "com.disktracker.scanner", category: "bridge")
     private let rustBinary: URL
 
     // JSON record type from Rust CLI
@@ -46,17 +97,18 @@ final class DirectoryScannerBridge: @unchecked Sendable {
     }
 
     init() {
-        let paths = [
-            URL(fileURLWithPath: "/Users/abrar/Files/projects/disk-tracker/traversal-engine/target/release/disk-tracker-engine"),
-            URL(fileURLWithPath: "/Users/abrar/Files/projects/disk-tracker/traversal-engine/target/debug/disk-tracker-engine"),
-        ]
-        self.rustBinary = paths.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? paths[0]
-        os_log("DirectoryScannerBridge: binary %{public}@", log: log, type: .info, rustBinary.path)
+        var bundlePath: URL?
+        if let resURL = Bundle.main.resourceURL {
+            bundlePath = resURL.appendingPathComponent("disk-tracker-engine")
+        }
+        let candidates = [bundlePath].compactMap { $0 }
+        self.rustBinary = candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? candidates[0]
+        log.info("binary \(rustBinary.path)")
     }
 
     /// Scan a path synchronously. Call from a background queue.
     func scan(path: String, config: ScanConfig) -> DiskNode? {
-        os_log("DirectoryScannerBridge: scanning %{public}@", log: log, type: .info, path)
+        log.info("scanning \(path)")
 
         var args = ["scan", path, "--format=json"]
         if config.excludeHiddenFiles { args.append("--exclude-hidden") }
@@ -73,7 +125,7 @@ final class DirectoryScannerBridge: @unchecked Sendable {
             try task.run()
             task.waitUntilExit()
         } catch {
-            os_log("DirectoryScannerBridge: task failed: %{public}@", log: log, type: .error, error.localizedDescription)
+            log.error("task failed: \(error.localizedDescription)")
             return nil
         }
 
@@ -81,14 +133,14 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         guard !data.isEmpty else {
             let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
             let errStr = String(data: errData, encoding: .utf8) ?? ""
-            os_log("DirectoryScannerBridge: stderr: %{public}@", log: log, type: .error, errStr)
+            log.error("stderr: \(errStr)")
             return nil
         }
 
         // Parse JSON from Rust CLI
         let decoder = JSONDecoder()
         guard let output = try? decoder.decode(RScanOutput.self, from: data) else {
-            os_log("DirectoryScannerBridge: JSON decode failed", log: log, type: .error)
+            log.error("JSON decode failed")
             return nil
         }
 
