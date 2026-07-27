@@ -78,7 +78,7 @@ struct SmartFilterResultsView: View {
     }
 
     private var resultList: some View {
-        let sortedResults = model.sortedNodes(model.smartFilterResults.map { $0.node })
+//        let sortedResults = model.sortedNodes(model.smartFilterResults.map { $0.node })
         // Note: smart filter results are SmartFilterResult, not DiskNode; sort the underlying nodes
         List(model.smartFilterResults.sorted(by: { a, b in
             switch model.sortKey {

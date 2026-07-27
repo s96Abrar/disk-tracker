@@ -297,7 +297,7 @@ final class AppModel: ObservableObject, @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let rootNode = self.scanner.scan(path: path, config: ScanConfig())
-            log.info("RootNode: \(rootNode)")
+            log.info("RootNode: \(String(describing: rootNode))")
             let duration = Date().timeIntervalSince(startTime)
 
             DispatchQueue.main.async {
