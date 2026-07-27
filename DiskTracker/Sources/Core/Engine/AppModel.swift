@@ -172,6 +172,42 @@ final class AppModel: ObservableObject, @unchecked Sendable {
     /// Phase 5: Whether a duplicate scan is in progress (can be slow for large trees).
     var isDuplicateScanRunning: Bool = false
 
+    /// Phase 4: Sort configuration for clickable header sorting.
+    var sortKey: SortKey = .name
+    var sortAscending: Bool = true
+
+    enum SortKey: String, CaseIterable, Identifiable {
+        case name = "Name"
+        case size = "Size"
+        case items = "Items"
+        case dateModified = "Date Modified"
+        var id: String { rawValue }
+    }
+
+    func toggleSort(for key: SortKey) {
+        if sortKey == key {
+            sortAscending.toggle()
+        } else {
+            sortKey = key
+            sortAscending = true
+        }
+    }
+
+    func sortedNodes(_ nodes: [DiskNode]) -> [DiskNode] {
+        nodes.sorted {
+            switch sortKey {
+            case .name:
+                return sortAscending ? $0.name.localizedCompare($1.name) == .orderedAscending : $0.name.localizedCompare($1.name) == .orderedDescending
+            case .size:
+                return sortAscending ? $0.physicalSize < $1.physicalSize : $0.physicalSize > $1.physicalSize
+            case .items:
+                return sortAscending ? $0.childCount < $1.childCount : $0.childCount > $1.childCount
+            case .dateModified:
+                return sortAscending ? $0.modTimeSecs < $1.modTimeSecs : $0.modTimeSecs > $1.modTimeSecs
+            }
+        }
+    }
+
     enum SmartFilterKind: String, CaseIterable, Identifiable {
         case large = "Large Files"
         case old = "Old / Unused"

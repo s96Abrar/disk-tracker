@@ -8,6 +8,28 @@
 
 import SwiftUI
 
+private struct SortHeaderButton: View {
+    let title: String
+    let sortKey: AppModel.SortKey
+    @ObservedObject var model: AppModel
+    var body: some View {
+        Button {
+            model.toggleSort(for: sortKey)
+        } label: {
+            HStack(spacing: 2) {
+                Text(title)
+                if model.sortKey == sortKey {
+                    Image(systemName: model.sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+
 // MARK: - Smart Filter Results
 
 /// Lists SmartFilterService results and routes delete requests back to ContentView.
@@ -33,6 +55,10 @@ struct SmartFilterResultsView: View {
             Label(model.activeSmartFilter?.rawValue ?? "Smart Filter",
                   systemImage: model.activeSmartFilter?.icon ?? "wand.and.stars")
                 .font(.headline)
+            SortHeaderButton(title: "Name", sortKey: .name, model: model)
+            SortHeaderButton(title: "Size", sortKey: .size, model: model)
+            SortHeaderButton(title: "Items", sortKey: .items, model: model)
+            SortHeaderButton(title: "Date Modified", sortKey: .dateModified, model: model)
             Spacer()
             Text("\(model.smartFilterResults.count) items")
                 .font(.caption)
@@ -52,7 +78,16 @@ struct SmartFilterResultsView: View {
     }
 
     private var resultList: some View {
-        List(model.smartFilterResults) { result in
+        let sortedResults = model.sortedNodes(model.smartFilterResults.map { $0.node })
+        // Note: smart filter results are SmartFilterResult, not DiskNode; sort the underlying nodes
+        List(model.smartFilterResults.sorted(by: { a, b in
+            switch model.sortKey {
+            case .name: return model.sortAscending ? a.node.name.localizedCompare(b.node.name) == .orderedAscending : a.node.name.localizedCompare(b.node.name) == .orderedDescending
+            case .size: return model.sortAscending ? a.node.physicalSize < b.node.physicalSize : a.node.physicalSize > b.node.physicalSize
+            case .items: return model.sortAscending ? a.node.childCount < b.node.childCount : a.node.childCount > b.node.childCount
+            case .dateModified: return model.sortAscending ? a.node.modTimeSecs < b.node.modTimeSecs : a.node.modTimeSecs > b.node.modTimeSecs
+            }
+        })) { result in
             SmartFilterResultRow(
                 result: result,
                 isSelected: model.selectedNode?.id == result.node.id,
@@ -116,6 +151,12 @@ private struct SmartFilterResultRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            // Date Modified column
+            Text(dateString(from: result.node.modTimeSecs))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .frame(width: 110, alignment: .trailing)
+
             if result.matchReason != .emptyFolder && result.node.fileKind != .directory {
                 Text(humanReadableBytes(result.node.physicalSize))
                     .font(.system(.body, design: .monospaced))
@@ -160,6 +201,14 @@ private struct SmartFilterResultRow: View {
         if days > 0  { return "\(days)d ago" }
         let hours = secs / 3_600
         return "\(hours)h ago"
+    }
+
+
+    private func dateString(from secs: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(secs))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
     }
 
     private func iconForKind(_ kind: FileKind) -> String {

@@ -12,19 +12,20 @@ struct DirectoryListView: View {
         if let root = model.rootNode {
             List {
                 Section {
-                    if let children = root.children {
-                        ForEach(children, id: \.id) { child in
-                            DirectoryRowView(node: child, model: model)
-                        }
+                    let displayNodes = model.sortedNodes(root.children ?? [])
+                    ForEach(displayNodes, id: \.id) { child in
+                        DirectoryRowView(node: child, model: model)
                     }
                 } header: {
-                    HStack {
-                        Text("Name")
+                    HStack(spacing: 4) {
+                        SortHeaderButton(title: "Name", sortKey: .name, model: model)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Size")
+                        SortHeaderButton(title: "Size", sortKey: .size, model: model)
                             .frame(width: 100, alignment: .trailing)
-                        Text("Items")
+                        SortHeaderButton(title: "Items", sortKey: .items, model: model)
                             .frame(width: 60, alignment: .trailing)
+                        SortHeaderButton(title: "Date Modified", sortKey: .dateModified, model: model)
+                            .frame(width: 110, alignment: .trailing)
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -53,25 +54,44 @@ struct DirectoryListView: View {
     }
 }
 
-/// Row renders a single DiskNode with depth indent, expand/collapse, and recursive children.
-struct DirectoryRowView: View {
-    let node: DiskNode
+private struct SortHeaderButton: View {
+    let title: String
+    let sortKey: AppModel.SortKey
     @ObservedObject var model: AppModel
 
     var body: some View {
+        Button {
+            model.toggleSort(for: sortKey)
+        } label: {
+            HStack(spacing: 2) {
+                Text(title)
+                if model.sortKey == sortKey {
+                    Image(systemName: model.sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct DirectoryRowView: View {
+    let node: DiskNode
+    @ObservedObject var model: AppModel
+    @State private var isExpanded = false
+
+    var body: some View {
         HStack(spacing: 8) {
-            // Indent based on depth
             if node.depth > 0 {
                 Spacer()
                     .frame(width: CGFloat(node.depth * 16))
             }
-
-            // Expand/collapse for directories with children
             if node.fileKind == .directory && !(node.children?.isEmpty ?? true) {
                 Button {
-                    model.toggleExpanded(node)
+                    isExpanded.toggle()
                 } label: {
-                    Image(systemName: model.isExpanded(node) ? "chevron.down" : "chevron.right")
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: 16)
@@ -81,8 +101,6 @@ struct DirectoryRowView: View {
                 Spacer()
                     .frame(width: 16)
             }
-
-            // Icon
             Circle()
                 .fill(colorForKind(node.fileKind))
                 .frame(width: 20, height: 20)
@@ -91,8 +109,6 @@ struct DirectoryRowView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.white)
                 )
-
-            // Name
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.name)
                     .font(.body)
@@ -102,28 +118,25 @@ struct DirectoryRowView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-
             Spacer()
-
-            // Size — total physical size for directories, direct size for files
             Text(formatBytes(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize))
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
-
-            // Item count — childCount from Rust for directories, "—" for files
-            Text(node.fileKind == .directory ? "\(node.childCount)" : "—")
+            Text(node.fileKind == .directory ? "\(childCount(of: node))" : "—")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.tertiary)
                 .frame(width: 60, alignment: .trailing)
+            Text(dateModifiedString(from: node.modTimeSecs))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .frame(width: 110, alignment: .trailing)
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture {
             model.selectNode(node)
         }
-
-        // Recursive children when expanded
-        if model.isExpanded(node), let children = node.children {
+        if isExpanded, let children = node.children {
             ForEach(children) { child in
                 DirectoryRowView(node: child, model: model)
             }
@@ -132,6 +145,18 @@ struct DirectoryRowView: View {
 
     private func formatBytes(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    private func dateModifiedString(from secs: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(secs))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
+    }
+
+    private func childCount(of node: DiskNode) -> Int {
+        guard let children = node.children, !children.isEmpty else { return 0 }
+        return children.count + children.reduce(0) { $0 + childCount(of: $1) }
     }
 
     private func colorForKind(_ kind: FileKind) -> Color {
