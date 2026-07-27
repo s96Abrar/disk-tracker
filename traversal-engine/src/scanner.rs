@@ -2,7 +2,6 @@
 
 use crate::directory_walker;
 use crate::file_record::{append_to_string_table, FileRecord, NodeType};
-use rayon::prelude::*;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -66,9 +65,39 @@ pub fn scan_directory(
 ) -> Result<ScanResult, ScanError> {
     let state = Arc::new(ScanState::new(config));
 
+    // Add the root directory itself first, so it has a real node_id > 0.
+    // All top-level items scanned under root will use this as their parent_id.
+    {
+        let mut records = state.results.lock().unwrap();
+        let mut strings = state.string_table.lock().unwrap();
+        let mut next_id = state.next_id.lock().unwrap();
+        let name = root_path.file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root_path.to_string_lossy().into_owned());
+        let name_offset = append_to_string_table(&mut strings, &name);
+        let node_id = *next_id;
+        *next_id += 1;
+        let root_record = FileRecord {
+            node_id,
+            parent_id: 0,
+            name_offset,
+            name_len: name.len() as u32,
+            logical_size: 0,
+            physical_size: 0,
+            node_type: NodeType::Directory as u8,
+            is_system_protected: false,
+            mod_time_secs: 0,
+            depth: 0,
+            child_count: 0,
+            first_child_id: 0,
+            padding: [0; 6],
+        };
+        records.push(root_record);
+    }
+
     // BFS: process directories level by level so parent_id is always known.
     // Each entry is (path, depth, parent_node_id).
-    let mut todo: Vec<(PathBuf, u16, u64)> = vec![(root_path.to_path_buf(), 0, 0)];
+    let mut todo: Vec<(PathBuf, u16, u64)> = vec![(root_path.to_path_buf(), 1, 1)];
 
     while let Some((path, depth, parent_id)) = todo.pop() {
         if state.cancelled.load(Ordering::Relaxed) {
@@ -123,24 +152,22 @@ pub fn scan_directory(
 
     on_progress(1.0);
 
-    // Fix child_count and first_child_id by building parent index
-    drop(todo);
+    // Build child_link from the accumulated results, then patch
+    // first_child_id / child_count for all directory records.
     let mut records = state.results.lock().unwrap();
     let mut child_link: std::collections::HashMap<u64, (u64, u32)> = std::collections::HashMap::new();
 
     for rec in records.iter() {
-        if rec.parent_id != 0 {
-            let entry = child_link.entry(rec.parent_id).or_insert((rec.node_id, 0));
-            entry.1 += 1;
-        }
+        // Include root (parent_id=0) so root gets first_child_id/child_count.
+        let entry = child_link.entry(rec.parent_id).or_insert((rec.node_id, 0));
+        entry.1 += 1;
     }
 
+    // Now update parent records: those whose node_id is a key in child_link
     for rec in records.iter_mut() {
-        if rec.parent_id != 0 {
-            if let Some((first_child_id, count)) = child_link.get(&rec.parent_id) {
-                rec.first_child_id = *first_child_id;
-                rec.child_count = *count;
-            }
+        if let Some((first_child_node_id, count)) = child_link.get(&rec.node_id) {
+            rec.first_child_id = *first_child_node_id;
+            rec.child_count = *count;
         }
     }
 

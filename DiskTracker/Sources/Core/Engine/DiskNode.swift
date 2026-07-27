@@ -68,7 +68,9 @@ struct DiskNodeBuilder {
                 isSystemProtected: rec.isSystemProtected,
                 modTimeSecs: rec.modTimeSecs,
                 depth: rec.depth,
-                children: nil
+                childCount: rec.childCount,
+                children: nil,
+                totalPhysicalSize: rec.physicalSize
             )
             nodes.append(node)
         }

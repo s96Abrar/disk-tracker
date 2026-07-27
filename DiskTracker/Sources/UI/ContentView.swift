@@ -149,7 +149,17 @@ struct ToolbarView: View {
                     .frame(minWidth: 200)
 
                 Button {
-                    // Open folder picker
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = false
+                    panel.canChooseDirectories = true
+                    panel.allowsMultipleSelection = false
+                    panel.canCreateDirectories = false
+                    panel.title = "Select Folder to Scan"
+                    panel.message = "Choose a directory to analyze with Disk Tracker"
+                    panel.prompt = "Select"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        scanPath = url.path
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -434,7 +444,3 @@ struct InspectorView: View {
         }
     }
 }
-
-// MARK: - Color Extension
-//
-// Color(hex:) is defined in Utilities/ColorHex.swift and shared across views.

@@ -48,11 +48,13 @@ enum SyntheticScanBuilder {
     // MARK: - Helpers
 
     private static func dir(name: String, children: [DiskNode], modTime: Int64, depth: UInt16) -> DiskNode {
-        let size = children.reduce(UInt64(0)) { $0 + $1.physicalSize }
+        let totalSize = children.reduce(UInt64(0)) { $0 + $1.totalPhysicalSize }
         return DiskNode(recordIndex: 0, name: name, path: name,
-                        logicalSize: size, physicalSize: size,
+                        logicalSize: totalSize, physicalSize: 0,
                         fileKind: .directory, isSystemProtected: false,
-                        modTimeSecs: modTime, depth: depth, children: children)
+                        modTimeSecs: modTime, depth: depth,
+                        childCount: UInt32(children.count), children: children,
+                        totalPhysicalSize: totalSize)
     }
 
     private static func leaf(name: String, ext: String, size: UInt64,
@@ -61,7 +63,9 @@ enum SyntheticScanBuilder {
         return DiskNode(recordIndex: 0, name: name, path: name,
                         logicalSize: size, physicalSize: size,
                         fileKind: kind, isSystemProtected: false,
-                        modTimeSecs: modTime, depth: depth, children: nil)
+                        modTimeSecs: modTime, depth: depth,
+                        childCount: 0, children: nil,
+                        totalPhysicalSize: size)
     }
 
     private static func classify(ext: String) -> FileKind {

@@ -48,6 +48,8 @@ struct SidebarView: View {
                         Image(systemName: "clock")
                         VStack(alignment: .leading) {
                             Text(last.scanDate, style: .relative)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                             Text("Last scan")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

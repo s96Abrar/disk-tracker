@@ -39,6 +39,7 @@ struct DiskNode: Identifiable, Equatable, Sendable, Hashable {
     var isSystemProtected: Bool
     var modTimeSecs: Int64
     var depth: UInt16
+    var childCount: UInt32
     var children: [DiskNode]?
 
     static func == (lhs: DiskNode, rhs: DiskNode) -> Bool {
@@ -55,10 +56,9 @@ struct DiskNode: Identifiable, Equatable, Sendable, Hashable {
         children?.reduce(logicalSize) { $0 + $1.totalLogicalSize } ?? logicalSize
     }
 
-    /// Total physical size of this node and all descendants (recursive).
-    var totalPhysicalSize: UInt64 {
-        children?.reduce(physicalSize) { $0 + $1.totalPhysicalSize } ?? physicalSize
-    }
+    /// Total physical size of this node and all descendants (recursive). Computed by
+    /// `computeTotalPhysicalSizes` after the full tree is built.
+    var totalPhysicalSize: UInt64 = 0
 
     /// Classify a file by its extension for colour-coding.
     static func detectFileKind(`extension`: String) -> FileKind {
@@ -104,6 +104,21 @@ final class AppModel: ObservableObject, @unchecked Sendable {
     var rootNode: DiskNode?
     var selectedNode: DiskNode?
     var currentView: ViewMode = .sunburst
+
+    /// Tracks which folder node IDs are expanded in the list view.
+    var expandedNodeIds: Set<UUID> = []
+
+    func toggleExpanded(_ node: DiskNode) {
+        if expandedNodeIds.contains(node.id) {
+            expandedNodeIds.remove(node.id)
+        } else {
+            expandedNodeIds.insert(node.id)
+        }
+    }
+
+    func isExpanded(_ node: DiskNode) -> Bool {
+        expandedNodeIds.contains(node.id)
+    }
 
     /// Phase 3: Show or hide hidden files during scanning.
     var showHiddenFiles: Bool = false {
@@ -246,6 +261,7 @@ final class AppModel: ObservableObject, @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let rootNode = self.scanner.scan(path: path, config: ScanConfig())
+            log.info("RootNode: \(rootNode)")
             let duration = Date().timeIntervalSince(startTime)
 
             DispatchQueue.main.async {

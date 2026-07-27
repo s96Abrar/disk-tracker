@@ -57,26 +57,6 @@ struct DirectoryListView: View {
 struct DirectoryRowView: View {
     let node: DiskNode
     @ObservedObject var model: AppModel
-    @State private var isExpanded = false
-
-    private func colorForKind(_ kind: FileKind) -> Color {
-        switch kind {
-        case .image: return Color(hex: "FF6B6B")
-        case .video: return Color(hex: "9B59B6")
-        case .audio: return Color(hex: "F39C12")
-        case .document: return Color(hex: "3498DB")
-        case .archive: return Color(hex: "27AE60")
-        case .application: return Color(hex: "E74C3C")
-        case .directory: return Color(hex: "2C3E50")
-        case .other: return Color(hex: "95A5A6")
-        }
-    }
-
-    /// Count children recursively for "Items" column.
-    private func childCount(of node: DiskNode) -> Int {
-        guard let children = node.children, !children.isEmpty else { return 0 }
-        return children.count + children.reduce(0) { $0 + childCount(of: $1) }
-    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -89,9 +69,9 @@ struct DirectoryRowView: View {
             // Expand/collapse for directories with children
             if node.fileKind == .directory && !(node.children?.isEmpty ?? true) {
                 Button {
-                    isExpanded.toggle()
+                    model.toggleExpanded(node)
                 } label: {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: model.isExpanded(node) ? "chevron.down" : "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(width: 16)
@@ -125,13 +105,13 @@ struct DirectoryRowView: View {
 
             Spacer()
 
-            // Size (physical)
-            Text(formatBytes(node.physicalSize))
+            // Size — total physical size for directories, direct size for files
+            Text(formatBytes(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize))
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
 
-            // Item count (recursive children only for directories)
-            Text(node.fileKind == .directory ? "\(childCount(of: node))" : "—")
+            // Item count — childCount from Rust for directories, "—" for files
+            Text(node.fileKind == .directory ? "\(node.childCount)" : "—")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.tertiary)
                 .frame(width: 60, alignment: .trailing)
@@ -143,7 +123,7 @@ struct DirectoryRowView: View {
         }
 
         // Recursive children when expanded
-        if isExpanded, let children = node.children {
+        if model.isExpanded(node), let children = node.children {
             ForEach(children) { child in
                 DirectoryRowView(node: child, model: model)
             }
@@ -152,6 +132,19 @@ struct DirectoryRowView: View {
 
     private func formatBytes(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    private func colorForKind(_ kind: FileKind) -> Color {
+        switch kind {
+        case .image: return Color(hex: "FF6B6B")
+        case .video: return Color(hex: "9B59B6")
+        case .audio: return Color(hex: "F39C12")
+        case .document: return Color(hex: "3498DB")
+        case .archive: return Color(hex: "27AE60")
+        case .application: return Color(hex: "E74C3C")
+        case .directory: return Color(hex: "2C3E50")
+        case .other: return Color(hex: "95A5A6")
+        }
     }
 
     private func iconForKind(_ kind: FileKind) -> String {

@@ -4,3 +4,7 @@ gan-harness/
 CLAUDE.local.md
 .DS_Store
 .claude/settings.local.json
+.claude/
+.vscode/
+PLAN.md
+DiskTracker/Binaries
