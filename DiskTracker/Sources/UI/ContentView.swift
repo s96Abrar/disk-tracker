@@ -308,7 +308,7 @@ struct InspectorView: View {
                                     Text("Physical")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    Text(formatBytes(node.physicalSize))
+                                    Text(formatBytes(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize))
                                         .font(.title3)
                                         .fontWeight(.
                                                     semibold)
@@ -332,6 +332,34 @@ struct InspectorView: View {
                                 Text("Diff: \(formatBytes(diff))")
                                     .font(.caption)
                                     .foregroundStyle(.orange)
+                            }
+                        }
+
+                        Divider()
+
+                        // Folder info
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Folder Details")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Items")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(node.fileKind == .directory ? "\(childCountString(node))" : "—")
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text("Modified")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(dateModifiedString(from: node.modTimeSecs))
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                }
                             }
                         }
 
@@ -412,6 +440,18 @@ struct InspectorView: View {
                 .padding()
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func dateModifiedString(from secs: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(secs))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
+    }
+
+    private func childCountString(_ node: DiskNode) -> String {
+        guard node.fileKind == .directory else { return "—" }
+        return "\(node.childCount)"
     }
 
     private func formatBytes(_ bytes: UInt64) -> String {

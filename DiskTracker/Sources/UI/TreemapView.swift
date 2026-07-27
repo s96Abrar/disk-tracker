@@ -119,7 +119,7 @@ struct TreemapView: View {
             for child in children {
                 items.append(TreemapItem(
                     label: child.name,
-                    value: Double(child.physicalSize),
+                    value: Double(child.fileKind == .directory ? child.totalPhysicalSize : child.physicalSize),
                     color: colors[child.fileKind] ?? .gray
                 ))
             }

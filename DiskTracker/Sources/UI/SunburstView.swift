@@ -113,7 +113,7 @@ struct SunburstView: View {
         var segments: [SunburstSegment] = []
         var currentAngle: Double = 0
         let totalAngle: Double = 360
-        let totalSize = root.physicalSize > 0 ? Double(root.physicalSize) : 1.0
+        let totalSize = (root.fileKind == .directory ? root.totalPhysicalSize : root.physicalSize) > 0 ? Double(root.fileKind == .directory ? root.totalPhysicalSize : root.physicalSize) : 1.0
 
         // Root segment at center
         segments.append(SunburstSegment(
