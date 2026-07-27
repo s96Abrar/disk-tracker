@@ -197,6 +197,11 @@ final class AppModel: ObservableObject, @unchecked Sendable {
         nodes.sorted {
             switch sortKey {
             case .name:
+                let isFolderA = $0.fileKind == .directory
+                let isFolderB = $1.fileKind == .directory
+                if isFolderA != isFolderB {
+                    return isFolderA // folders first
+                }
                 return sortAscending ? $0.name.localizedCompare($1.name) == .orderedAscending : $0.name.localizedCompare($1.name) == .orderedDescending
             case .size:
                 return sortAscending ? $0.physicalSize < $1.physicalSize : $0.physicalSize > $1.physicalSize
