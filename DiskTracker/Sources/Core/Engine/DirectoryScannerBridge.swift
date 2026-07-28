@@ -257,7 +257,4 @@ final class DirectoryScannerBridge: @unchecked Sendable {
 
         return rootNode
     }
-
-    func cancel() {}
-    var isRunning: Bool { false }
 }
