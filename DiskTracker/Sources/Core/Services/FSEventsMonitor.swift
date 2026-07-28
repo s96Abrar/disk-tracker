@@ -26,6 +26,7 @@ struct FSEventRecord: Identifiable, Sendable {
 /// Wraps an FSEventStream for a single watched directory tree.
 ///
 /// ponytail: one monitor per scan root. Callback-based FSEvents API scheduled
+/// ceiling: callback scheduled. upgrade: event-based realtime.
 /// on the main queue for simplicity. Main-thread callbacks keep model updates
 /// race-free with SwiftUI.
 final class FSEventsMonitor {

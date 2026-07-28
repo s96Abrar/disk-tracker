@@ -59,6 +59,7 @@ enum DuplicateFinderService {
 
     /// Default disk-backed source. Tests inject their own via `setContentSource(_:)`.
     /// ponytail: kept as a static var so tests can swap on/off. Equivalent in cost to
+    /// ceiling: cost-neutral. upgrade: DI preferred.
     /// a shared actor — duplicates are run on background queues anyway.
     nonisolated(unsafe) static var contentSource: DuplicateContentSource = DiskContentSource()
 
@@ -117,6 +118,7 @@ enum DuplicateFinderService {
     }
 
     /// ponytail: shared SHA-256 wrapper — nil for missing/empty input so the bucket
+    /// ceiling: nil-safe wrapper. upgrade: strict hash contract.
     /// step silently drops unreadable files instead of two hand-written guards.
     private static func sha256(of data: Data?) -> Data? {
         guard let data, !data.isEmpty else { return nil }
@@ -151,6 +153,7 @@ enum DuplicateFinderService {
     }
 
     /// ponytail: only DiskNode flows through today; routed through one accessor so a
+    /// ceiling: single node type routed. upgrade: second type added.
     /// future caller type means a single line change, not every hash helper.
     private static func pathFor<T>(_ item: T) -> String {
         (item as? DiskNode)?.path ?? ""

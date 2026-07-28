@@ -33,6 +33,7 @@ final class DuplicateFinderServiceTests: XCTestCase {
 
     /// In-memory content source. Map URL → raw bytes.
     /// ponytail: keeps duplicate tests hermetic; disk reads are otherwise unavoidable.
+    /// ceiling: hermetic memory source. upgrade: when virtual filesystem mock available.
     private struct MemorySource: DuplicateContentSource {
         var bytes: [URL: Data]
         func read(url: URL, length: Int) -> Data? {

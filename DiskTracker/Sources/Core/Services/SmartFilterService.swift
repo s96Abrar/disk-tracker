@@ -137,6 +137,7 @@ enum SmartFilterService {
         // ponytail: tests leave recordIndex at 0 for every node, so we use a
         // content key instead. We compute depths once per call (O(n)) and
         // skip the root unless it's a true 0-child directory.
+        // ceiling: content-based identity. upgrade: when DiskNode.id is stable.
         let depths = depthMap(from: root)
         func depthOf(_ node: DiskNode) -> Int {
             depths[Self.key(for: node)] ?? Int(node.depth)

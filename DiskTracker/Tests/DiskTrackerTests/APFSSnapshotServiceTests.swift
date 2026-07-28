@@ -111,7 +111,7 @@ final class APFSSnapshotServiceTests: XCTestCase {
     // MARK: - Total size
 
     func testTotalSnapshotSizeReturnsZero() {
-        // ponytail: tmutil per-snapshot sizes aren't available without the priv helper.
+        // ponytail: tmutil per-snapshot sizes are not available without priv helper. ceiling: stock tmutil limit. upgrade: when helper exposes per-snap size.
         XCTAssertEqual(APFSSnapshotService.totalSnapshotSize(for: "/"), 0)
     }
 

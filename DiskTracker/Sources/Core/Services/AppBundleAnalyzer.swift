@@ -46,6 +46,7 @@ enum AppBundleAnalyzer {
         let fm = FileManager.default
 
         // ponytail: 3 sibling directories share the same size-summing shape; the
+        // ceiling: shared summing shape. upgrade: shape diverges.
         // helper keeps sizes summing separate from per-item capture (Frameworks).
         let execSize       = sumChildren(of: base.appendingPathComponent("Contents/MacOS"),     fm: fm)
         let frameworkPairs: [(String, UInt64)] = sizedChildren(
@@ -91,6 +92,7 @@ enum AppBundleAnalyzer {
                 node: node,
                 matchedAt: Date(),
                 matchReason: .duplicate // ponytail: reuse MatchReason; may add .appBundle later
+                // ceiling: reused enum. upgrade: .appBundle key added.
             ))
         }
 

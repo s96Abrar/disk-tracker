@@ -11,7 +11,7 @@ enum ExportService {
 
     // MARK: - Top-level entries
 
-    /// ponytail: thin overload — keeps the call site terse for callers that don't
+    /// ponytail: thin overload terse call site. ceiling: <2 args. upgrade: callers exceed 2 args.
     /// care about formatter pinning (CLI, debug). Tests use the formatter-taking
     /// form for determinism.
     static func exportJSON(root: DiskNode) -> String {
@@ -75,6 +75,7 @@ enum ExportService {
 
     static func fileKindLabel(_ kind: FileKind) -> String {
         // ponytail: enum keys map 1:1 to label strings; the switch was a 9-line block
+        // ceiling: simple mapping. upgrade: label strings diverge.
         // for the same answer. Index into a static table.
         Self.fileKindLabels[kind, default: "Other"]
     }
