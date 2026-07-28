@@ -2,6 +2,7 @@
 
 use crate::directory_walker;
 use crate::file_record::{append_to_string_table, FileRecord, NodeType};
+use rayon::scope;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -95,23 +96,76 @@ pub fn scan_directory(
         records.push(root_record);
     }
 
-    // BFS: process directories level by level so parent_id is always known.
-    // Each entry is (path, depth, parent_node_id).
-    let mut todo: Vec<(PathBuf, u16, u64)> = vec![(root_path.to_path_buf(), 1, 1)];
+    // Parallel traversal: one Rayon task per directory. The expensive part is
+    // the read_dir + per-entry stat() in walk_directory, which runs without
+    // holding any lock. Record building + node_id assignment happen under the
+    // shared lock (cheap, memcpy-only), keeping ids unique. Children are
+    // spawned after the parent's records are committed, so parent_id is always
+    // known. ponytail: scope-based work stealing — no manual thread pool.
+    let root_state = state.clone();
+    scope(|s| {
+        s.spawn(move |s| walk_dir_task(s, root_path.to_path_buf(), 1, 1, &root_state));
+    });
 
-    while let Some((path, depth, parent_id)) = todo.pop() {
-        if state.cancelled.load(Ordering::Relaxed) {
-            return Err(ScanError::Cancelled);
+    on_progress(1.0);
+
+    // Build child_link from the accumulated results, then patch
+    // first_child_id / child_count for all directory records.
+    let mut records = state.results.lock().unwrap();
+    let mut child_link: std::collections::HashMap<u64, (u64, u32)> = std::collections::HashMap::new();
+
+    for rec in records.iter() {
+        // Include root (parent_id=0) so root gets first_child_id/child_count.
+        let entry = child_link.entry(rec.parent_id).or_insert((rec.node_id, 0));
+        entry.1 += 1;
+    }
+
+    // Now update parent records: those whose node_id is a key in child_link
+    for rec in records.iter_mut() {
+        if let Some((first_child_node_id, count)) = child_link.get(&rec.node_id) {
+            rec.first_child_id = *first_child_node_id;
+            rec.child_count = *count;
         }
+    }
 
-        let entries = match directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+    let string_table = state.string_table.lock().unwrap().clone();
+    let result_records = records.clone();
 
+    Ok(ScanResult { records: result_records, string_table })
+}
+
+/// Process one directory: walk it (no lock), build records under the shared
+/// lock, then spawn a child task for each subdirectory. `scope` provides
+/// work-stealing parallelism; failures walking a single dir are skipped.
+fn walk_dir_task<'sc>(
+    s: &rayon::Scope<'sc>,
+    path: PathBuf,
+    depth: u16,
+    parent_id: u64,
+    state: &Arc<ScanState>,
+) {
+    if state.cancelled.load(Ordering::Relaxed) {
+        return;
+    }
+
+    // Expensive I/O outside the lock: read_dir + per-entry metadata().
+    let entries = match directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    if entries.is_empty() {
+        return;
+    }
+
+    // Build records for this dir under the shared lock. memcpy-only, so the
+    // critical section is short; ids stay unique because this is the only
+    // place `next_id` advances.
+    let mut children: Vec<(PathBuf, u64)> = Vec::new();
+    {
         let mut records = state.results.lock().unwrap();
         let mut strings = state.string_table.lock().unwrap();
         let mut next_id = state.next_id.lock().unwrap();
+        let max_depth_ok = state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth;
 
         for entry in entries {
             let name_offset = append_to_string_table(&mut strings, &entry.name);
@@ -141,40 +195,19 @@ pub fn scan_directory(
             };
             records.push(record);
 
-            // Queue directory children for later processing
-            if entry.is_dir && (state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth) {
+            if entry.is_dir && max_depth_ok {
                 let mut child_path = PathBuf::from(&path);
                 child_path.push(&entry.name);
-                todo.push((child_path, depth + 1, node_id));
+                children.push((child_path, node_id));
             }
         }
+        state.progress.fetch_add(1, Ordering::Relaxed);
+    } // lock released before spawning children
+
+    for (child_path, child_id) in children {
+        let st = state.clone();
+        s.spawn(move |s| walk_dir_task(s, child_path, depth + 1, child_id, &st));
     }
-
-    on_progress(1.0);
-
-    // Build child_link from the accumulated results, then patch
-    // first_child_id / child_count for all directory records.
-    let mut records = state.results.lock().unwrap();
-    let mut child_link: std::collections::HashMap<u64, (u64, u32)> = std::collections::HashMap::new();
-
-    for rec in records.iter() {
-        // Include root (parent_id=0) so root gets first_child_id/child_count.
-        let entry = child_link.entry(rec.parent_id).or_insert((rec.node_id, 0));
-        entry.1 += 1;
-    }
-
-    // Now update parent records: those whose node_id is a key in child_link
-    for rec in records.iter_mut() {
-        if let Some((first_child_node_id, count)) = child_link.get(&rec.node_id) {
-            rec.first_child_id = *first_child_node_id;
-            rec.child_count = *count;
-        }
-    }
-
-    let string_table = state.string_table.lock().unwrap().clone();
-    let result_records = records.clone();
-
-    Ok(ScanResult { records: result_records, string_table })
 }
 
 #[derive(Debug)]
