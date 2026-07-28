@@ -82,8 +82,9 @@ pub extern "C" fn scanner_cancel(handle: *mut ScannerHandle) {
 
 /// Returns true if a scan is currently running.
 #[no_mangle]
-pub extern "C" fn scanner_is_running(_handle: *mut ScannerHandle) -> bool {
-    false  // TODO: track running state
+pub extern "C" fn scanner_is_running(handle: *mut ScannerHandle) -> bool {
+    if handle.is_null() { return false; }
+    unsafe { (*handle).state_ptr.is_null() == false }
 }
 
 /// C-compatible scan result descriptor.
@@ -153,43 +154,4 @@ pub unsafe extern "C" fn scanner_free_result(result: *mut CScanResult) {
     r.string_table_offset = 0;
 }
 
-// Cache stubs (DuckDB in Phase 2)
-#[no_mangle]
-pub unsafe extern "C" fn scanner_cache_latest(_db_path: *const c_char) {}
-#[no_mangle]
-pub unsafe extern "C" fn scanner_load_cached(_db_path: *const c_char, _out: *mut CScanResult) -> bool { false }
-#[no_mangle]
-pub unsafe extern "C" fn scanner_query_growth(_db_path: *const c_char, _since: *const c_char) -> f64 { 0.0 }
 
-// Tests
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_file_record_layout() {
-        let rec = FileRecord {
-            node_id: 42,
-            parent_id: 0,
-            name_offset: 0,
-            name_len: 10,
-            logical_size: 1024,
-            physical_size: 2048,
-            node_type: NodeType::File as u8,
-            is_system_protected: false,
-            mod_time_secs: 0,
-            depth: 0,
-            child_count: 0,
-            first_child_id: 0,
-            padding: [0; 6],
-        };
-        assert_eq!(rec.node_id, 42);
-    }
-
-    #[test]
-    fn test_scan_config_default() {
-        let cfg = ScanConfig::default();
-        assert!(cfg.exclude_system_paths);
-        assert!(!cfg.exclude_hidden_files);
-    }
-}

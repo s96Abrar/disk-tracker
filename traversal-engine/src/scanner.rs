@@ -96,6 +96,7 @@ pub fn scan_directory(
         records.push(root_record);
     }
 
+    // ponytail: ScanState.progress AtomicU64 set (fetch_add) but never queried; progress contract partial. Read available if needed.
     // Parallel traversal: one Rayon task per directory. The expensive part is
     // the read_dir + per-entry stat() in walk_directory, which runs without
     // holding any lock. Record building + node_id assignment happen under the

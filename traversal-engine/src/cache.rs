@@ -1,6 +1,6 @@
 //! `cache.rs` — Scan cache stub for MVP.
 //!
-//! Real DuckDB integration deferred to Phase 2.  Uses a simple JSON file for now.
+//! Cache stub (not DuckDB). Binary format (not JSON). String table not saved; contract partial. See M2 Phase 3 for full replacement.
 
 use crate::file_record::FileRecord;
 use std::io::{Read, Write};
@@ -12,7 +12,7 @@ const CACHE_VERSION: u32 = 1;
 /// Minimal binary cache format:
 /// [MAGIC: 10 bytes] [VERSION: 4 bytes LE] [COUNT: 4 bytes LE] [FileRecord × N] [Strings…]
 
-/// Save records + strings to a binary cache file.
+/// Save FileRecord bytes to binary file. Note: _string_table parameter received but NOT written (contract gap — names unrecoverable on load). ponytail: add when needed.
 pub fn save_scan<P: AsRef<Path>>(
     cache_path: P,
     records: &[FileRecord],

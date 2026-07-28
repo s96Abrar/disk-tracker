@@ -54,7 +54,7 @@ pub fn walk_directory<P: AsRef<Path>>(
         entries.push(BulkEntry {
             name,
             size,
-            physical_size: size,  // TODO: query ATTR_FILE_ALLOCSIZE on APFS
+            physical_size: size,  // ponytail: M4 placeholder — ATTR_FILE_ALLOCSIZE not queried; clone double-counting remains until getattrlistbulk syscall added.
             mode: 0,              // not needed for MVP
             mtime,
             is_dir,
@@ -65,16 +65,4 @@ pub fn walk_directory<P: AsRef<Path>>(
     Ok(entries)
 }
 
-/// Open a directory for reading (compatibility shim for getattrlistbulk path).
-pub fn open_dir<P: AsRef<Path>>(_path: P) -> io::Result<fs::DirEntry> {
-    // Not used in fallback implementation
-    Err(io::Error::new(io::ErrorKind::Unsupported, "use walk_directory"))
-}
-
-/// Close directory — no-op for std::fs fallback.
-pub fn close_dir(_fd: i32) {}
-
-/// Bulk read — not used with std::fs fallback; kept for API compat.
-pub fn bulk_read(_dir_fd: i32, _buf: &mut [u8]) -> io::Result<(Vec<BulkEntry>, bool)> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "use walk_directory"))
-}
+// ponytail: bulk_read / open_dir / close_dir removed — getattrlistbulk deferred (Phase 2 skipped). No callers reference these.
