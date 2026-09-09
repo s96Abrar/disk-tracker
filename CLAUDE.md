@@ -65,7 +65,7 @@ Release build and DMG packaging: `documents/2_BUILD_PLAN.md` §4 (verified).
 | Allocated size via `ATTR_FILE_DATAALLOCSIZE` | Matches what `du` and Finder report | ✅ |
 | Rust for traversal | No ARC on millions of objects | ✅ |
 | Immediate-mode Canvas | Declarative hierarchy stalls past ~1K nodes | ✅ |
-| One scan transport | Two is a maintenance tax and a memory ceiling | ❌ FFI and subprocess both present |
+| One scan transport | Two is a maintenance tax and a memory ceiling | ✅ subprocess + flat binary buffer |
 | Ad-hoc signed DMG for v0.1 | No Developer Program membership | ✅ verified |
 
 **APFS clones are counted once per clone, not once per shared extent.** The

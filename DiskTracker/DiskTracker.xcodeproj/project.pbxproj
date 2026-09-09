@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		096FEA52E28359A7D3D49705 /* SunburstViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */; };
+		CE8EF8A3472447A2A2F28E75 /* ScanBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49683D5AE36945A0837F4353 /* ScanBufferTests.swift */; };
 		4AC8492CCB5CC3E9F61B4866 /* DiskNodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA208F381CA1B6629E2524A /* DiskNodeTests.swift */; };
 		55E60C31195442C3A14C4D17 /* ExportServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 926D06FEDB9964D973033FF4 /* ExportServiceTests.swift */; };
 		6010631F03A1D9DD33304E5A /* APFSSnapshotServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA2B642FE88056E77201E78 /* APFSSnapshotServiceTests.swift */; };
@@ -43,6 +44,7 @@
 		9AD3602F668CF7CF907A401B /* DirectoryListViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryListViewTests.swift; sourceTree = "<group>"; };
 		9D07738E059F3D3A18363191 /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
 		A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunburstViewTests.swift; sourceTree = "<group>"; };
+		49683D5AE36945A0837F4353 /* ScanBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanBufferTests.swift; sourceTree = "<group>"; };
 		ACA2B642FE88056E77201E78 /* APFSSnapshotServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APFSSnapshotServiceTests.swift; sourceTree = "<group>"; };
 		B764A3C64B2CFCE8183F5F55 /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
 		C93FFFB112A6AE5F2D68B29C /* DiskTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DiskTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -109,6 +111,7 @@
 				9D07738E059F3D3A18363191 /* PerformanceTests.swift */,
 				7B1C0D05617B5840C4E7AC9B /* SmartFilterServiceTests.swift */,
 				A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */,
+				49683D5AE36945A0837F4353 /* ScanBufferTests.swift */,
 				F871CC754708D23CAD454BB6 /* TreemapViewTests.swift */,
 			);
 			path = DiskTrackerTests;
@@ -229,6 +232,7 @@
 				F9E364CB6FDBF158E6118EF8 /* PerformanceTests.swift in Sources */,
 				BE68D409D5975D2DBE206259 /* SmartFilterServiceTests.swift in Sources */,
 				096FEA52E28359A7D3D49705 /* SunburstViewTests.swift in Sources */,
+				CE8EF8A3472447A2A2F28E75 /* ScanBufferTests.swift in Sources */,
 				DB57D349559AE5CDAB42C96C /* TreemapViewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

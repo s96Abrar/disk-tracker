@@ -45,28 +45,6 @@ private final class DataSink: @unchecked Sendable {
 final class DirectoryScannerBridge: @unchecked Sendable {
     private let rustBinary: URL
 
-    // JSON record type from Rust CLI
-    private struct RRecord: Codable {
-        var node_id: UInt64
-        var parent_id: UInt64
-        var name: String
-        var name_offset: UInt32
-        var name_len: UInt32
-        var logical_size: UInt64
-        var physical_size: UInt64
-        var node_type: UInt8
-        var is_system_protected: Bool
-        var mod_time_secs: Int64
-        var depth: UInt16
-        var child_count: UInt32
-        var first_child_id: UInt64
-    }
-
-    private struct RScanOutput: Codable {
-        var records: [RRecord]
-        var string_table: [UInt8]
-    }
-
     init() {
         var bundlePath: URL?
         if let resURL = Bundle.main.resourceURL {
@@ -99,7 +77,7 @@ final class DirectoryScannerBridge: @unchecked Sendable {
     func scan(path: String, config: ScanConfig, onProgress: (@Sendable (Int) -> Void)? = nil) -> DiskNode? {
         log.info("scanning \(path, privacy: .public)")
 
-        var args = ["scan", path, "--format=json"]
+        var args = ["scan", path]
         if config.excludeHiddenFiles { args.append("--exclude-hidden") }
 
         let outputPipe = Pipe()
@@ -164,23 +142,15 @@ final class DirectoryScannerBridge: @unchecked Sendable {
             return nil
         }
 
-        // Parse JSON from Rust CLI
-        let decoder = JSONDecoder()
-        guard let output = try? decoder.decode(RScanOutput.self, from: data) else {
-            log.error("JSON decode failed")
+        // Never interpolate the buffer or the tree into a log line:
+        // interpolation is eager, so it builds a multi-gigabyte string for a
+        // real scan.
+        guard let buffer = ScanBuffer(data) else {
+            log.error("engine produced an unreadable scan buffer")
             return nil
         }
-
-        // Build DiskNode tree from flat records.
-        // Never interpolate `output` or the tree into a log line: interpolation
-        // is eager, so it builds a multi-gigabyte string for a real scan.
-        log.info("decoded \(output.records.count) records")
-        guard var root = buildTree(records: output.records, stringTable: Data(output.string_table)) else {
-            return nil
-        }
-        fixFullPaths(node: &root, parentPath: "")
-        computeTotalPhysicalSizes(node: &root)
-        return root
+        log.info("decoded \(buffer.recordCount) records")
+        return buildTree(buffer)
     }
 
     /// Parse a `progress <count>` line from the engine's stderr.
@@ -191,106 +161,66 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         return Int(text.dropFirst(progressPrefix.count).trimmingCharacters(in: .whitespaces))
     }
 
-    /// Recursively compute full paths for all nodes in the tree.
-    private func fixFullPaths(node: inout DiskNode, parentPath: String) {
-        node.path = parentPath.isEmpty ? node.name : "\(parentPath)/\(node.name)"
-        if var children = node.children {
-            for i in children.indices {
-                fixFullPaths(node: &children[i], parentPath: node.path)
-            }
-            node.children = children
-        }
-    }
+    /// Build the `DiskNode` hierarchy from the flat record buffer.
+    ///
+    /// One pass. Paths, recursive physical totals and child ordering used to be
+    /// three more full walks over the finished tree; they are all derivable
+    /// during assembly, and a walk of a million-node tree is not free.
+    func buildTree(_ buffer: ScanBuffer) -> DiskNode? {
+        guard buffer.recordCount > 0 else { return nil }
 
-    /// Recursively compute totalPhysicalSize for each directory as sum of all descendant physical sizes.
-    /// File nodes get their own physicalSize as total.
-    private func computeTotalPhysicalSizes(node: inout DiskNode) {
-        if var children = node.children, !children.isEmpty {
-            for i in children.indices {
-                computeTotalPhysicalSizes(node: &children[i])
-            }
-            let sum = children.reduce(UInt64(0)) { $0 + $1.totalPhysicalSize }
-            node.totalPhysicalSize = sum
-            node.children = children
-        } else {
-            node.totalPhysicalSize = node.physicalSize
-        }
-    }
-
-    /// Sort children recursively: directories first, then files, both alphabetically.
-    private func sortChildren(_ node: inout DiskNode) {
-        guard var children = node.children, !children.isEmpty else { return }
-        children.sort { a, b in
-            if a.fileKind == .directory && b.fileKind != .directory {
-                return true
-            }
-            if a.fileKind != .directory && b.fileKind == .directory {
-                return false
-            }
-            return a.name.localizedStandardCompare(b.name) == .orderedAscending
-        }
-        for i in children.indices {
-            sortChildren(&children[i])
-        }
-        node.children = children
-    }
-
-    /// Build DiskTree hierarchy from flat record list.
-    private func buildTree(records: [RRecord], stringTable: Data) -> DiskNode? {
-        guard !records.isEmpty else { return nil }
-
-        // Group child record indices by their parent's node_id.
-        // parent_id is a node_id, not a record index, so we look it up via nodeIdToIndex.
-        var nodeIdToIndex: [UInt64: Int] = [:]
-        nodeIdToIndex.reserveCapacity(records.count)
-        var childrenOfParent: [UInt64: [Int]] = [:]
-        childrenOfParent.reserveCapacity(records.count)
-        for (i, r) in records.enumerated() {
-            nodeIdToIndex[r.node_id] = i
-            childrenOfParent[r.parent_id, default: []].append(i)
+        // `parent_id` is a node_id, not an array index, so children are grouped
+        // by their parent's node_id.
+        var childIndices: [UInt64: [Int]] = [:]
+        childIndices.reserveCapacity(buffer.recordCount)
+        for i in 0..<buffer.recordCount {
+            childIndices[buffer.parentID(at: i), default: []].append(i)
         }
 
-        // Assemble the tree bottom-up from the root. Because DiskNode is a value
-        // type, we must fully build each child — including all of its descendants —
-        // *before* inserting it into its parent's children array. Appending a node
-        // copies it at that instant, so wiring a node into its parent first and
-        // attaching grandchildren later leaves the parent holding a stale,
-        // childless copy — which is what previously dropped nested descendants
-        // from folder size totals while leaving child_count (sourced directly from
-        // Rust) correct.
-        func assemble(_ index: Int) -> DiskNode {
-            let r = records[index]
-            let kind: FileKind
-            switch r.node_type {
-            case 1: kind = .directory
-            default:
-                let ext = (r.name as NSString).pathExtension
-                kind = DiskNode.detectFileKind(extension: ext)
+        // DiskNode is a value type, so a child must be complete before it is
+        // appended — appending copies. Attaching grandchildren afterwards would
+        // leave the parent holding a stale, childless copy, which is what used
+        // to drop nested descendants from folder totals.
+        func assemble(_ index: Int, parentPath: String) -> DiskNode {
+            let name = buffer.name(at: index)
+            let path = parentPath.isEmpty ? name : "\(parentPath)/\(name)"
+
+            let nodeType = buffer.nodeType(at: index)
+            let kind: FileKind = nodeType == 1
+                ? .directory
+                : DiskNode.detectFileKind(extension: (name as NSString).pathExtension)
+
+            var children = (childIndices[buffer.nodeID(at: index)] ?? [])
+                .map { assemble($0, parentPath: path) }
+            // Directories first, then files, each alphabetically.
+            children.sort { a, b in
+                if (a.fileKind == .directory) != (b.fileKind == .directory) {
+                    return a.fileKind == .directory
+                }
+                return a.name.localizedStandardCompare(b.name) == .orderedAscending
             }
-            let childIndices = childrenOfParent[r.node_id] ?? []
-            let children = childIndices.map { assemble($0) }
+
+            let physical = buffer.physicalSize(at: index)
+            let total = children.isEmpty
+                ? physical
+                : children.reduce(UInt64(0)) { $0 + $1.totalPhysicalSize }
 
             return DiskNode(
                 recordIndex: index,
-                name: r.name,
-                path: r.name,
-                logicalSize: r.logical_size,
-                physicalSize: r.physical_size,
+                name: name,
+                path: path,
+                logicalSize: buffer.logicalSize(at: index),
+                physicalSize: physical,
                 fileKind: kind,
-                isSystemProtected: r.is_system_protected,
-                modTimeSecs: r.mod_time_secs,
-                depth: r.depth,
-                childCount: r.child_count,
+                isSystemProtected: buffer.isSystemProtected(at: index),
+                modTimeSecs: buffer.modTimeSecs(at: index),
+                depth: buffer.depth(at: index),
+                childCount: buffer.childCount(at: index),
                 children: children,
-                totalPhysicalSize: r.physical_size
+                totalPhysicalSize: total
             )
         }
 
-        var rootNode = assemble(0)
-
-        // Sort children recursively: directories first, then files, both alphabetically.
-        sortChildren(&rootNode)
-
-        return rootNode
+        return assemble(0, parentPath: "")
     }
 }

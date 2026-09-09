@@ -1,100 +1,105 @@
 //! Rust CLI binary for Disk Tracker.
-//! Usage: disk-tracker-engine scan <path> [--format=json]
+//!
+//! Usage: `disk-tracker-engine scan <path> [--format=binary|json] [--exclude-hidden]`
+//!
+//! The app spawns this and reads the scan result from stdout. `binary` is the
+//! product path (see `wire.rs`); `json` exists so a scan can be inspected by
+//! hand without a decoder, and nothing in the app reads it.
+//!
+//! Progress goes to stderr as `progress <count>` lines, one per sample, so
+//! stdout stays a single clean payload.
 
 use disk_tracker_engine::scanner::{scan_directory, ScanConfig};
+use disk_tracker_engine::wire;
 use std::env;
+use std::io::Write;
 use std::process;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 3 {
-        eprintln!("Usage: disk-tracker-engine scan <path> [--format=json]");
-        process::exit(1);
-    }
-
-    let cmd = &args[1];
-    if cmd != "scan" {
-        eprintln!("Unknown command: {}", cmd);
+    if args.len() < 3 || args[1] != "scan" {
+        eprintln!(
+            "Usage: disk-tracker-engine scan <path> [--format=binary|json] [--exclude-hidden]"
+        );
         process::exit(1);
     }
 
     let path = &args[2];
-    let json_mode = args.iter().any(|a| a.contains("json"));
+    let json_mode = args.iter().any(|a| a == "--format=json");
 
-    if !json_mode {
-        eprintln!("Use --format=json for machine-readable output");
-        process::exit(1);
-    }
+    let config = ScanConfig {
+        exclude_hidden_files: args.iter().any(|a| a == "--exclude-hidden"),
+        ..ScanConfig::default()
+    };
 
-    let config = ScanConfig::default();
-    // Progress goes to stderr so stdout stays a single clean JSON document.
-    // Format: `progress <entries scanned so far>`, one per line.
-    match scan_directory(std::path::Path::new(path), config, |scanned| {
+    let result = match scan_directory(std::path::Path::new(path), config, |scanned| {
         eprintln!("progress {}", scanned);
     }) {
-        Ok(result) => {
-            #[derive(serde::Serialize)]
-            struct RRecord {
-                node_id: u64,
-                parent_id: u64,
-                name: String,
-                name_offset: u32,
-                name_len: u32,
-                logical_size: u64,
-                physical_size: u64,
-                node_type: u8,
-                is_system_protected: bool,
-                mod_time_secs: i64,
-                depth: u16,
-                child_count: u32,
-                first_child_id: u64,
-            }
-
-            #[derive(serde::Serialize)]
-            struct RScanOutput<'a> {
-                records: Vec<RRecord>,
-                string_table: &'a [u8],
-            }
-
-            let string_table = &result.string_table;
-            let records: Vec<RRecord> = result
-                .records
-                .iter()
-                .map(|r| {
-                    let name = unsafe {
-                        let start = string_table.as_ptr().add(r.name_offset as usize);
-                        let len = r.name_len as usize;
-                        std::slice::from_raw_parts(start, len)
-                    };
-                    let name_str = String::from_utf8_lossy(name).to_string();
-                    RRecord {
-                        node_id: r.node_id,
-                        parent_id: r.parent_id,
-                        name: name_str,
-                        name_offset: r.name_offset,
-                        name_len: r.name_len,
-                        logical_size: r.logical_size,
-                        physical_size: r.physical_size,
-                        node_type: r.node_type,
-                        is_system_protected: r.is_system_protected,
-                        mod_time_secs: r.mod_time_secs,
-                        depth: r.depth,
-                        child_count: r.child_count,
-                        first_child_id: r.first_child_id,
-                    }
-                })
-                .collect();
-
-            let output = RScanOutput {
-                records,
-                string_table,
-            };
-            println!("{}", serde_json::to_string(&output).unwrap());
-        }
+        Ok(r) => r,
         Err(e) => {
             eprintln!("Scan error: {:?}", e);
             process::exit(1);
         }
+    };
+
+    if json_mode {
+        print_json(&result);
+        return;
     }
+
+    let buf = wire::encode(&result.records, &result.string_table);
+    // Lock stdout and write once. `println!` would take the lock per call and
+    // this payload is tens of megabytes on a real scan.
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    if let Err(e) = out.write_all(&buf).and_then(|_| out.flush()) {
+        // A broken pipe means the app cancelled the scan and closed its end.
+        // That is a normal cancellation, not a failure worth reporting.
+        if e.kind() != std::io::ErrorKind::BrokenPipe {
+            eprintln!("Write error: {}", e);
+            process::exit(1);
+        }
+    }
+}
+
+/// Human-readable dump for debugging. Not used by the app.
+fn print_json(result: &disk_tracker_engine::scanner::ScanResult) {
+    #[derive(serde::Serialize)]
+    struct JsonRecord<'a> {
+        node_id: u64,
+        parent_id: u64,
+        name: &'a str,
+        logical_size: u64,
+        physical_size: u64,
+        node_type: u8,
+        is_system_protected: bool,
+        mod_time_secs: i64,
+        depth: u16,
+        child_count: u32,
+    }
+
+    let table = &result.string_table;
+    let records: Vec<JsonRecord> = result
+        .records
+        .iter()
+        .map(|r| {
+            let start = r.name_offset as usize;
+            let end = (start + r.name_len as usize).min(table.len());
+            JsonRecord {
+                node_id: r.node_id,
+                parent_id: r.parent_id,
+                name: std::str::from_utf8(&table[start..end]).unwrap_or(""),
+                logical_size: r.logical_size,
+                physical_size: r.physical_size,
+                node_type: r.node_type,
+                is_system_protected: r.is_system_protected,
+                mod_time_secs: r.mod_time_secs,
+                depth: r.depth,
+                child_count: r.child_count,
+            }
+        })
+        .collect();
+
+    println!("{}", serde_json::to_string(&records).unwrap());
 }
