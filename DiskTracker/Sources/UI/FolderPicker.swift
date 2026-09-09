@@ -21,6 +21,11 @@ enum FolderPicker {
         panel.title = "Select Folder to Scan"
         panel.message = "Choose a directory to analyze with Disk Tracker"
         panel.prompt = "Scan"
-        return panel.runModal() == .OK ? panel.url : nil
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        // Bookmark now, while access is held: inside the sandbox the grant from
+        // this panel ends with the launch, and a scan cannot be re-opened after
+        // a restart without one.
+        ScopedAccess.remember(url)
+        return url
     }
 }

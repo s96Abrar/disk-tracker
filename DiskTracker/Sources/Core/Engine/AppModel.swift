@@ -524,10 +524,20 @@ final class AppModel: @unchecked Sendable {
         scanGeneration += 1
         let generation = scanGeneration
         let startTime = Date()
+        // Read on the main thread; the scan closure must not touch model state.
+        let scanConfig = ScanConfig(excludeHiddenFiles: !showHiddenFiles)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let scanned = self.scanner.scan(path: path, config: ScanConfig()) { count in
+            // Re-establish sandbox access to a folder chosen in an earlier
+            // launch. Held for the whole scan; nil is normal for paths that
+            // need no grant, and the scan proceeds either way.
+            // Access ends when the grant deinits, so it is held explicitly for
+            // the whole scan rather than left to the optimiser.
+            let grant = ScopedAccess.access(path: path)
+            defer { withExtendedLifetime(grant) {} }
+
+            let scanned = self.scanner.scan(path: path, config: scanConfig) { count in
                 DispatchQueue.main.async {
                     guard generation == self.scanGeneration else { return }
                     self.filesScanned = count
