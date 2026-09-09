@@ -79,7 +79,8 @@ pub fn scan_directory(
         let mut records = state.results.lock().unwrap();
         let mut strings = state.string_table.lock().unwrap();
         let mut next_id = state.next_id.lock().unwrap();
-        let name = root_path.file_name()
+        let name = root_path
+            .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| root_path.to_string_lossy().into_owned());
         let name_offset = append_to_string_table(&mut strings, &name);
@@ -135,7 +136,8 @@ pub fn scan_directory(
     // Build child_link from the accumulated results, then patch
     // first_child_id / child_count for all directory records.
     let mut records = state.results.lock().unwrap();
-    let mut child_link: std::collections::HashMap<u64, (u64, u32)> = std::collections::HashMap::new();
+    let mut child_link: std::collections::HashMap<u64, (u64, u32)> =
+        std::collections::HashMap::new();
 
     for rec in records.iter() {
         // Include root (parent_id=0) so root gets first_child_id/child_count.
@@ -154,7 +156,10 @@ pub fn scan_directory(
     let string_table = state.string_table.lock().unwrap().clone();
     let result_records = records.clone();
 
-    Ok(ScanResult { records: result_records, string_table })
+    Ok(ScanResult {
+        records: result_records,
+        string_table,
+    })
 }
 
 /// Process one directory: walk it (no lock), build records under the shared
@@ -189,7 +194,8 @@ fn walk_dir_task<'sc>(
         let mut records = state.results.lock().unwrap();
         let mut strings = state.string_table.lock().unwrap();
         let mut next_id = state.next_id.lock().unwrap();
-        let max_depth_ok = state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth;
+        let max_depth_ok =
+            state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth;
 
         for entry in entries {
             let name_offset = append_to_string_table(&mut strings, &entry.name);

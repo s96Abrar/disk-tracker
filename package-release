@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+#
+#  package-release — Build, verify and package Disk Tracker as a DMG
+#
+#  Usage:
+#    ./package-release              Build + verify + DMG into dist/
+#    ./package-release --verify     Build + verify only, no DMG
+#    ./package-release --help
+#
+#  There is no Developer ID for this project, so the app is ad-hoc signed.
+#  It runs (an ad-hoc signature satisfies the arm64 requirement) but Gatekeeper
+#  rejects it on download; users clear the quarantine flag by hand. See
+#  documents/2_BUILD_PLAN.md §4.
+#
+#  Both this script and .github/workflows/release.yml call the same steps, so
+#  what CI publishes is what you can reproduce locally.
+#
+
+set -euo pipefail
+
+export PATH="$HOME/.cargo/bin:$PATH"
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SWIFT_DIR="$ROOT/DiskTracker"
+RUST_DIR="$ROOT/traversal-engine"
+DERIVED="$ROOT/.build-release"
+DIST="$ROOT/dist"
+
+BOLD='\033[1m'; RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; BLUE='\033[34m'; RESET='\033[0m'
+info()  { echo -e "${BLUE}ℹ  $1${RESET}"; }
+ok()    { echo -e "${GREEN}✅  $1${RESET}"; }
+warn()  { echo -e "${YELLOW}⚠️  $1${RESET}"; }
+fail()  { echo -e "${RED}❌  $1${RESET}" >&2; exit 1; }
+header(){ echo; echo -e "${BOLD}$1${RESET}"; printf '━%.0s' {1..60}; echo; }
+
+VERIFY_ONLY=false
+for arg in "${@:-}"; do
+    case "$arg" in
+        --verify) VERIFY_ONLY=true ;;
+        --help|-h) sed -n '/^#  /,/^#$/p' "$0" | sed 's/^# //; s/^#$//'; exit 0 ;;
+        "") ;;
+        *) fail "Unknown argument: $arg (use --help)" ;;
+    esac
+done
+
+# ── Version, from the bundle rather than a second source of truth ────
+PLIST="$SWIFT_DIR/Resources/Info.plist"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+[[ -n "$VERSION" ]] || fail "CFBundleShortVersionString missing from $PLIST"
+
+echo -e "${BOLD}Disk Tracker — release packaging${RESET}"
+echo "Version: $VERSION"
+
+# ── 1. Rust engine ───────────────────────────────────────────────────
+header "1/5  Rust engine (release)"
+command -v cargo >/dev/null || fail "cargo not found"
+cd "$RUST_DIR"
+cargo build --release
+mkdir -p "$SWIFT_DIR/Binaries"
+cp "$RUST_DIR/target/release/disk-tracker-engine" "$SWIFT_DIR/Binaries/disk-tracker-engine"
+chmod +x "$SWIFT_DIR/Binaries/disk-tracker-engine"
+ok "Engine built and staged"
+
+# ── 2. Swift app ─────────────────────────────────────────────────────
+header "2/5  Swift app (Release configuration)"
+command -v xcodebuild >/dev/null || fail "xcodebuild not found"
+cd "$SWIFT_DIR"
+rm -rf "$DERIVED"
+xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker \
+    -configuration Release -derivedDataPath "$DERIVED" build \
+    | grep -E "error:|warning: .*deprecated|BUILD" || true
+
+APP="$DERIVED/Build/Products/Release/DiskTracker.app"
+[[ -d "$APP" ]] || fail "Release build produced no .app at $APP"
+ok "Built $APP"
+
+# ── 3. Verify the bundle ─────────────────────────────────────────────
+header "3/5  Bundle verification"
+
+ENGINE="$APP/Contents/Resources/disk-tracker-engine"
+[[ -x "$ENGINE" ]] || fail "Engine missing from bundle. App Sandbox forbids launching anything outside the .app, so a scan would fail at runtime."
+ok "Engine bundled ($(du -h "$ENGINE" | cut -f1))"
+
+BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+[[ "$BUNDLE_VERSION" == "$VERSION" ]] \
+    || fail "Bundle version $BUNDLE_VERSION does not match source $VERSION"
+ok "Version $BUNDLE_VERSION"
+
+codesign --verify --deep --strict "$APP" 2>/dev/null \
+    || fail "Code signature invalid"
+SIGINFO="$(codesign -dvv "$APP" 2>&1)"
+grep -q "Signature=adhoc" <<<"$SIGINFO" \
+    && ok "Ad-hoc signed (expected — no Developer ID)" \
+    || warn "Not ad-hoc: $(grep Signature <<<"$SIGINFO")"
+grep -q "runtime" <<<"$SIGINFO" \
+    && ok "Hardened runtime enabled" \
+    || warn "Hardened runtime NOT enabled"
+
+# The engine is a nested executable — an unsigned one breaks the outer seal.
+codesign --verify --strict "$ENGINE" 2>/dev/null \
+    && ok "Engine signature valid" \
+    || fail "Engine signature invalid"
+
+if codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "app-sandbox"; then
+    ok "Sandbox entitlement present"
+else
+    warn "Sandbox entitlement missing"
+fi
+
+# Read-write is required before Trash works. Warn, don't fail — the
+# entitlement is widened in P0-5, not here.
+if codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "user-selected.read-write"; then
+    ok "Entitlement: user-selected.read-write (Trash will work)"
+else
+    warn "Entitlement is read-only — moving files to Trash will FAIL at runtime"
+fi
+
+# Gatekeeper always rejects ad-hoc. Report it so it is never a surprise.
+if spctl -a -vv "$APP" 2>&1 | grep -q "rejected"; then
+    warn "Gatekeeper: rejected (expected for ad-hoc; users run the xattr command)"
+else
+    ok "Gatekeeper: accepted"
+fi
+
+$VERIFY_ONLY && { echo; ok "Verify-only run complete. Skipped DMG."; exit 0; }
+
+# ── 4. DMG ───────────────────────────────────────────────────────────
+header "4/5  DMG"
+mkdir -p "$DIST"
+DMG="$DIST/DiskTracker-v$VERSION.dmg"
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG"
+hdiutil create -volname "Disk Tracker" -srcfolder "$STAGE" \
+    -ov -format UDZO "$DMG" >/dev/null
+ok "Created $DMG ($(du -h "$DMG" | cut -f1))"
+
+# ── 5. Round-trip the DMG ────────────────────────────────────────────
+header "5/5  DMG round-trip"
+MOUNT="$(mktemp -d)"
+hdiutil attach "$DMG" -mountpoint "$MOUNT" -nobrowse -quiet
+if [[ -d "$MOUNT/DiskTracker.app" ]] && [[ -x "$MOUNT/DiskTracker.app/Contents/Resources/disk-tracker-engine" ]]; then
+    codesign --verify --deep --strict "$MOUNT/DiskTracker.app" 2>/dev/null \
+        && ok "Mounted app verifies — engine present, signature intact" \
+        || warn "Mounted app failed signature verification"
+else
+    hdiutil detach "$MOUNT" -quiet || true
+    fail "DMG contents incomplete"
+fi
+hdiutil detach "$MOUNT" -quiet
+rmdir "$MOUNT" 2>/dev/null || true
+
+# ── Done ─────────────────────────────────────────────────────────────
+header "Ready"
+echo "  $DMG"
+echo
+echo "Install instructions for users (also in documents/2_BUILD_PLAN.md §4.4):"
+echo
+echo "  1. Open the DMG, drag Disk Tracker to Applications"
+echo "  2. Run:  xattr -dr com.apple.quarantine /Applications/DiskTracker.app"
+echo "  3. Open normally"
+echo
+echo "Step 2 is required because this build is ad-hoc signed, not notarized."
+echo "Right-click -> Open does NOT work for ad-hoc apps on Apple Silicon."

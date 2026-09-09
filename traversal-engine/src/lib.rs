@@ -3,7 +3,6 @@
 //! High-performance macOS file-system traversal engine.
 //! Exposes a C-compatible FFI for SwiftUI consumption.
 
-pub mod cache;
 pub mod directory_walker;
 pub mod file_record;
 pub mod scanner;
@@ -25,6 +24,9 @@ pub struct ScannerHandle {
 unsafe impl Sync for ScannerHandle {}
 
 /// Create a fresh scanner handle.
+///
+/// # Safety
+/// The returned pointer must be released with [`scanner_free`] exactly once.
 #[no_mangle]
 pub unsafe extern "C" fn scanner_create() -> *mut ScannerHandle {
     let handle = Box::new(ScannerHandle {
@@ -35,6 +37,10 @@ pub unsafe extern "C" fn scanner_create() -> *mut ScannerHandle {
 }
 
 /// Free a scanner handle.
+///
+/// # Safety
+/// `handle` must be a pointer from [`scanner_create`] that has not already been
+/// freed. It is dangling after this call.
 #[no_mangle]
 pub unsafe extern "C" fn scanner_free(handle: *mut ScannerHandle) {
     if !handle.is_null() {
@@ -44,6 +50,10 @@ pub unsafe extern "C" fn scanner_free(handle: *mut ScannerHandle) {
 
 /// Start a scan.  `on_progress` is called from an internal thread with the
 /// number of entries scanned so far (the total is unknown until the walk ends).
+///
+/// # Safety
+/// `handle` must be a live pointer from [`scanner_create`] and `path` must be a
+/// NUL-terminated C string that stays valid for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn scanner_start(
     handle: *mut ScannerHandle,
@@ -51,7 +61,9 @@ pub unsafe extern "C" fn scanner_start(
     config: ScanConfig,
     on_progress: Option<unsafe extern "C" fn(u64)>,
 ) {
-    if handle.is_null() { return; }
+    if handle.is_null() {
+        return;
+    }
 
     let path_str = CStr::from_ptr(path).to_string_lossy();
     let handle_ref = &mut *handle;
@@ -61,7 +73,7 @@ pub unsafe extern "C" fn scanner_start(
             f(scanned);
         }
     };
-    
+
     match scan_directory(std::path::Path::new(&*path_str), config, cb) {
         Ok(result) => {
             let boxed = Box::new(result);
@@ -74,18 +86,26 @@ pub unsafe extern "C" fn scanner_start(
 }
 
 /// Cancel an in-progress scan.
+///
+/// # Safety
+/// `handle` must be a live pointer from [`scanner_create`].
 #[no_mangle]
-pub extern "C" fn scanner_cancel(handle: *mut ScannerHandle) {
+pub unsafe extern "C" fn scanner_cancel(handle: *mut ScannerHandle) {
     if !handle.is_null() {
-        unsafe { &*handle }.cancelled.store(true, Ordering::Relaxed);
+        (*handle).cancelled.store(true, Ordering::Relaxed);
     }
 }
 
 /// Returns true if a scan is currently running.
+///
+/// # Safety
+/// `handle` must be a live pointer from [`scanner_create`].
 #[no_mangle]
-pub extern "C" fn scanner_is_running(handle: *mut ScannerHandle) -> bool {
-    if handle.is_null() { return false; }
-    unsafe { (*handle).state_ptr.is_null() == false }
+pub unsafe extern "C" fn scanner_is_running(handle: *mut ScannerHandle) -> bool {
+    if handle.is_null() {
+        return false;
+    }
+    !(*handle).state_ptr.is_null()
 }
 
 /// C-compatible scan result descriptor.
@@ -99,40 +119,52 @@ pub struct CScanResult {
 }
 
 /// Retrieve the latest scan result.  Caller must call `scanner_free_result`.
+///
+/// # Safety
+/// `handle` must be a live pointer from [`scanner_create`]. The returned buffer
+/// is owned by the caller and must be released with [`scanner_free_result`].
 #[no_mangle]
-pub unsafe extern "C" fn scanner_get_result(
-    handle: *mut ScannerHandle,
-) -> CScanResult {
-    if handle.is_null() { return CScanResult { buffer: std::ptr::null_mut(), buffer_len: 0, record_count: 0, string_table_offset: 0 }; }
-    
+pub unsafe extern "C" fn scanner_get_result(handle: *mut ScannerHandle) -> CScanResult {
+    if handle.is_null() {
+        return CScanResult {
+            buffer: std::ptr::null_mut(),
+            buffer_len: 0,
+            record_count: 0,
+            string_table_offset: 0,
+        };
+    }
+
     let state_ptr = (*handle).state_ptr;
-    if state_ptr.is_null() { return CScanResult { buffer: std::ptr::null_mut(), buffer_len: 0, record_count: 0, string_table_offset: 0 }; }
-    
+    if state_ptr.is_null() {
+        return CScanResult {
+            buffer: std::ptr::null_mut(),
+            buffer_len: 0,
+            record_count: 0,
+            string_table_offset: 0,
+        };
+    }
+
     let result = &*(state_ptr as *const ScanResult);
     let records = &result.records;
     let strings = &result.string_table;
-    
+
     let record_count = records.len() as u64;
     let record_bytes = std::mem::size_of_val(records);
     let string_offset = record_bytes as u64;
-    
+
     // Build combined buffer: [FileRecords as bytes][Strings]
     let mut combined = Vec::with_capacity(record_bytes + strings.len());
     // SAFETY: FileRecord is repr(C) so byte layout is stable
-    let record_bytes_slice: &[u8] = unsafe {
-        std::slice::from_raw_parts(
-            records.as_ptr() as *const u8,
-            record_bytes
-        )
-    };
+    let record_bytes_slice: &[u8] =
+        unsafe { std::slice::from_raw_parts(records.as_ptr() as *const u8, record_bytes) };
     combined.extend_from_slice(record_bytes_slice);
     combined.extend_from_slice(strings);
-    
+
     let ptr = combined.as_ptr();
     let len = combined.len() as u64;
-    
+
     std::mem::forget(combined);
-    
+
     CScanResult {
         buffer: ptr as *mut u8,
         buffer_len: len,
@@ -142,17 +174,25 @@ pub unsafe extern "C" fn scanner_get_result(
 }
 
 /// Free a CScanResult returned by `scanner_get_result`.
+///
+/// # Safety
+/// `result` must point to a `CScanResult` produced by [`scanner_get_result`]
+/// that has not already been freed.
 #[no_mangle]
 pub unsafe extern "C" fn scanner_free_result(result: *mut CScanResult) {
-    if result.is_null() { return; }
+    if result.is_null() {
+        return;
+    }
     let r = &mut *result;
     if !r.buffer.is_null() && r.buffer_len > 0 {
-        drop(Vec::from_raw_parts(r.buffer, r.buffer_len as usize, r.buffer_len as usize));
+        drop(Vec::from_raw_parts(
+            r.buffer,
+            r.buffer_len as usize,
+            r.buffer_len as usize,
+        ));
     }
     r.buffer = std::ptr::null_mut();
     r.buffer_len = 0;
     r.record_count = 0;
     r.string_table_offset = 0;
 }
-
-

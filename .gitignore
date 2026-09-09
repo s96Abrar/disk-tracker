@@ -8,3 +8,7 @@ CLAUDE.local.md
 .vscode/
 PLAN.md
 DiskTracker/Binaries
+
+# Release packaging (package-release)
+dist/
+.build-release/

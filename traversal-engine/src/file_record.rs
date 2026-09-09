@@ -83,7 +83,10 @@ pub fn append_to_string_table(buf: &mut Vec<u8>, s: &str) -> u32 {
 /// `offset` must point to a valid NUL-terminated region inside `buf`.
 pub unsafe fn read_string_from_table(buf: &[u8], offset: u32) -> &str {
     let start = offset as usize;
-    let end = buf[start..].iter().position(|&b| b == 0).unwrap_or(buf.len() - start);
+    let end = buf[start..]
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(buf.len() - start);
     std::str::from_utf8_unchecked(&buf[start..start + end])
 }
 
@@ -180,7 +183,10 @@ mod tests {
         // padding: [u8; 6] at offset 72 (6)
         // Total: 78 bytes, aligned to 8-byte boundary = 80
         let size = std::mem::size_of::<FileRecord>();
-        assert_eq!(size, 80, "FileRecord should be 80 bytes for ABI compatibility");
+        assert_eq!(
+            size, 80,
+            "FileRecord should be 80 bytes for ABI compatibility"
+        );
     }
 
     #[test]
@@ -246,8 +252,10 @@ mod tests {
 
     #[test]
     fn test_file_record_magic() {
-        // Magic should be a non-zero identifier
-        assert!(FILE_RECORD_MAGIC != 0);
-        assert_eq!(FILE_RECORD_MAGIC & 0xFFFF_FFFF_FFFF_0000, 0x4454_5243_0000_0000);
+        // The prefix check below already implies a non-zero magic.
+        assert_eq!(
+            FILE_RECORD_MAGIC & 0xFFFF_FFFF_FFFF_0000,
+            0x4454_5243_0000_0000
+        );
     }
 }

@@ -29,7 +29,13 @@ fn create_test_files(base: &std::path::Path, file_count: usize) -> std::io::Resu
 
         for file_idx in 0..files_this_dir {
             let file_path = dir_path.join(format!("file_{}.txt", file_idx));
-            fs::write(&file_path, format!("test content {} from dir {} file {}", created, dir_idx, file_idx))?;
+            fs::write(
+                &file_path,
+                format!(
+                    "test content {} from dir {} file {}",
+                    created, dir_idx, file_idx
+                ),
+            )?;
             created += 1;
         }
     }

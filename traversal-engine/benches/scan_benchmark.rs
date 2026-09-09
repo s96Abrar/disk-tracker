@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use disk_tracker_engine::scanner::{scan_directory, ScanConfig};
 use std::fs;
 use std::path::Path;

@@ -1,0 +1,118 @@
+name: Tests
+
+# Manual only.
+#
+# The natural trigger is `push` to main / `pull_request`, but macOS runners bill
+# at 10x the Linux rate against a limited free-minute allowance, and this build
+# needs macOS for both xcodebuild and the getattrlistbulk syscalls. Running it
+# on every push would exhaust the allowance.
+#
+# So: run it by hand before merging to main, and before tagging a release.
+# To make it automatic later, add:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+on:
+  workflow_dispatch:
+    inputs:
+      run_release_build:
+        description: "Also verify the Release bundle (slower)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust engine
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            traversal-engine/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('traversal-engine/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Format
+        working-directory: traversal-engine
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: traversal-engine
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        working-directory: traversal-engine
+        run: cargo test --release
+
+  swift:
+    name: Swift app
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            traversal-engine/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('traversal-engine/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      # The app spawns this binary; App Sandbox forbids launching anything
+      # outside the bundle, so it has to be staged before xcodebuild runs.
+      - name: Build engine
+        run: ./build-disk-tracker --rust
+
+      - name: Test
+        working-directory: DiskTracker
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project DiskTracker.xcodeproj \
+            -scheme DiskTracker \
+            -destination 'platform=macOS' \
+            -resultBundlePath TestResults.xcresult \
+            | xcbeautify || xcodebuild test \
+            -project DiskTracker.xcodeproj \
+            -scheme DiskTracker \
+            -destination 'platform=macOS'
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: DiskTracker/TestResults.xcresult
+
+  bundle:
+    name: Release bundle
+    if: inputs.run_release_build
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      # Same script the release workflow and local packaging use, so a green
+      # run here means the release will build.
+      - name: Verify bundle
+        run: ./package-release --verify

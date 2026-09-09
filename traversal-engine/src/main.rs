@@ -58,31 +58,38 @@ fn main() {
             }
 
             let string_table = &result.string_table;
-            let records: Vec<RRecord> = result.records.iter().map(|r| {
-                let name = unsafe {
-                    let start = string_table.as_ptr().add(r.name_offset as usize);
-                    let len = r.name_len as usize;
-                    std::slice::from_raw_parts(start, len)
-                };
-                let name_str = String::from_utf8_lossy(name).to_string();
-                RRecord {
-                    node_id: r.node_id,
-                    parent_id: r.parent_id,
-                    name: name_str,
-                    name_offset: r.name_offset,
-                    name_len: r.name_len,
-                    logical_size: r.logical_size,
-                    physical_size: r.physical_size,
-                    node_type: r.node_type,
-                    is_system_protected: r.is_system_protected,
-                    mod_time_secs: r.mod_time_secs,
-                    depth: r.depth,
-                    child_count: r.child_count,
-                    first_child_id: r.first_child_id,
-                }
-            }).collect();
+            let records: Vec<RRecord> = result
+                .records
+                .iter()
+                .map(|r| {
+                    let name = unsafe {
+                        let start = string_table.as_ptr().add(r.name_offset as usize);
+                        let len = r.name_len as usize;
+                        std::slice::from_raw_parts(start, len)
+                    };
+                    let name_str = String::from_utf8_lossy(name).to_string();
+                    RRecord {
+                        node_id: r.node_id,
+                        parent_id: r.parent_id,
+                        name: name_str,
+                        name_offset: r.name_offset,
+                        name_len: r.name_len,
+                        logical_size: r.logical_size,
+                        physical_size: r.physical_size,
+                        node_type: r.node_type,
+                        is_system_protected: r.is_system_protected,
+                        mod_time_secs: r.mod_time_secs,
+                        depth: r.depth,
+                        child_count: r.child_count,
+                        first_child_id: r.first_child_id,
+                    }
+                })
+                .collect();
 
-            let output = RScanOutput { records, string_table };
+            let output = RScanOutput {
+                records,
+                string_table,
+            };
             println!("{}", serde_json::to_string(&output).unwrap());
         }
         Err(e) => {
