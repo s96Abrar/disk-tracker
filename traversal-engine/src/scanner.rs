@@ -106,8 +106,8 @@ pub fn scan_directory(
 
     // ponytail: ScanState.progress AtomicU64 set (fetch_add) but never queried; progress contract partial. Read available if needed.
     // Parallel traversal: one Rayon task per directory. The expensive part is
-    // the read_dir + per-entry stat() in walk_directory, which runs without
-    // holding any lock. Record building + node_id assignment happen under the
+    // the getattrlistbulk loop in walk_directory, which runs without holding
+    // any lock. Record building + node_id assignment happen under the
     // shared lock (cheap, memcpy-only), keeping ids unique. Children are
     // spawned after the parent's records are committed, so parent_id is always
     // known. ponytail: scope-based work stealing — no manual thread pool.
@@ -176,7 +176,7 @@ fn walk_dir_task<'sc>(
         return;
     }
 
-    // Expensive I/O outside the lock: read_dir + per-entry metadata().
+    // Expensive I/O outside the lock: the getattrlistbulk batches.
     let entries = match directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
         Ok(e) => e,
         Err(_) => return,

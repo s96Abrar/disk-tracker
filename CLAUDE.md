@@ -61,16 +61,18 @@ Release build and DMG packaging: `documents/2_BUILD_PLAN.md` §4 (verified).
 
 | Decision | Rationale | Status |
 |---|---|---|
-| `getattrlistbulk` over `stat()` | One kernel transition per batch | ❌ not implemented |
-| Allocated size via `ATTR_FIL_ALLOCSIZE` | Correct bytes; clones counted once | ❌ logical size in its place |
+| `getattrlistbulk` over `stat()` | One kernel transition per batch | ✅ 2.3x faster cold-cache |
+| Allocated size via `ATTR_FILE_DATAALLOCSIZE` | Matches what `du` and Finder report | ✅ |
 | Rust for traversal | No ARC on millions of objects | ✅ |
 | Immediate-mode Canvas | Declarative hierarchy stalls past ~1K nodes | ✅ |
 | One scan transport | Two is a maintenance tax and a memory ceiling | ❌ FFI and subprocess both present |
 | Ad-hoc signed DMG for v0.1 | No Developer Program membership | ✅ verified |
 
-**The first two are not aspirations — they are unmet claims.** Sizes the app
-displays today are logical sizes labelled as physical. Do not treat them as
-correct when reasoning about output.
+**APFS clones are counted once per clone, not once per shared extent.** The
+original guide claimed `ATTR_FIL_ALLOCSIZE` deduplicated them; measurement says
+otherwise — two clones of a 3MB file report 3MB each, exactly as `du` and
+Finder do. Reporting shared extents once is deferred
+(`documents/5_FUTURE_TARGETS.md` §2.2).
 
 ---
 
