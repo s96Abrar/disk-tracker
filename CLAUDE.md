@@ -1,62 +1,91 @@
 # Disk Tracker — Claude Code Guidance
 
+**Scope (v0.1):** scan a **local** folder or volume, show where the space went,
+delete what you don't want. Network volumes, S.M.A.R.T., APFS snapshots, the
+privileged helper, DuckDB, FSEvents and background scans are **deferred** —
+`documents/5_FUTURE_TARGETS.md`.
+
 **Reading Order (for AI agents):**
-1. `documents/1_PROJECT_GUIDE.md` — Architecture, FFI contract, data models
-2. `documents/2_BUILD_PLAN.md` — Feature requirements, MVP phases, implementation checklist
+1. `documents/1_PROJECT_GUIDE.md` — Architecture, scan contract, data models
+2. `documents/2_BUILD_PLAN.md` — Requirements, phase status, release checklist
 3. `documents/3_STANDARDS.md` — Coding standards, testing, git workflow
-4. `documents/market_research.md` — Competitive analysis (external reference)
+4. `documents/4_COMPLETION_PLAN.md` — What's left before v0.1 ships
+5. `documents/5_FUTURE_TARGETS.md` — Deferred features
+6. `documents/market_research.md` — Competitive analysis (external reference)
 
 ---
 
 ## Quick Start
 
-**Architecture:** Hybrid Rust/Swift. Rust core (`traversal-engine/`) does fast file scanning via `getattrlistbulk(2)` + Rayon. SwiftUI (`DiskTracker/`) handles the GUI with Canvas-based visualizations.
+**Architecture:** Hybrid Rust/Swift. The Rust core (`traversal-engine/`) walks
+the filesystem with Rayon work-stealing. SwiftUI (`DiskTracker/`) renders
+Canvas-based visualizations and owns file operations.
 
-**Key Components:**
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Rust Scanner | `traversal-engine/src/` | File traversal, FFI |
-| Swift App | `DiskTracker/Sources/` | GUI, file operations |
-| Privileged Helper | `helper-tool/` | SMAppService + NSXPC |
-| DuckDB Cache | Embedded in Rust | Historical scans |
+| Rust scanner | `traversal-engine/src/` | Traversal, `FileRecord` array |
+| Swift app | `DiskTracker/Sources/` | GUI, file operations |
+| Engine binary | `Contents/Resources/disk-tracker-engine` | Sandbox forbids launching anything outside the bundle |
 
-**Performance Targets:**
-- Scan 1M files: ≤15 seconds
-- Memory: ≤300MB per 1M files
-- UI: 60fps
+**Performance targets** (none currently measured — see `4_COMPLETION_PLAN.md` P0-8):
+1M files ≤15 s · ≤300 MB · 60 fps · cold launch ≤2 s
 
-**Global Constraints:**
-- macOS Sequoia 15.0+
-- Swift 6.0 (strict concurrency)
-- Sandbox + NSXPC for privileged ops
+**Constraints:**
+- macOS 15.0+ (Sequoia), Swift 6.0 strict concurrency
+- App Sandbox enabled; needs `files.user-selected.read-write` before Trash works
+- **Ad-hoc signing only** — no paid Developer Program membership, so no
+  notarization, no Sparkle, no privileged helper
 
 ---
 
 ## Common Commands
 
 ```bash
-# Build both (default)
-./build-disk-tracker
-
-# Build specific target
-./build-disk-tracker --rust    # Rust engine only
-./build-disk-tracker --swift   # Swift app only
-
-# Clean build artifacts
+./build-disk-tracker           # Rust + Swift (Debug)
+./build-disk-tracker --rust    # engine only; copies into DiskTracker/Binaries/
+./build-disk-tracker --swift
 ./build-disk-tracker --clean
 
-# Run
+cd traversal-engine && cargo test --release
+xcodebuild test -project DiskTracker/DiskTracker.xcodeproj \
+  -scheme DiskTracker -destination 'platform=macOS'
+
 open -a "Disk Tracker"
 ```
+
+Release build and DMG packaging: `documents/2_BUILD_PLAN.md` §4 (verified).
 
 ---
 
 ## Key Decisions
 
-1. **`getattrlistbulk` over `stat()`** — Bulk kernel call minimizes transitions
-2. **Physical size by default** — `ATTR_FIL_ALLOCSIZE` avoids APFS clone double-counting
-3. **Rust for traversal** — ARC overhead avoided with compile-time ownership
-4. **Immediate-mode Canvas** — Declarative hierarchy doesn't scale past ~1K elements
-5. **SMAppService + NSXPC** — Apple-supported path for privileged operations
+| Decision | Rationale | Status |
+|---|---|---|
+| `getattrlistbulk` over `stat()` | One kernel transition per batch | ❌ not implemented |
+| Allocated size via `ATTR_FIL_ALLOCSIZE` | Correct bytes; clones counted once | ❌ logical size in its place |
+| Rust for traversal | No ARC on millions of objects | ✅ |
+| Immediate-mode Canvas | Declarative hierarchy stalls past ~1K nodes | ✅ |
+| One scan transport | Two is a maintenance tax and a memory ceiling | ❌ FFI and subprocess both present |
+| Ad-hoc signed DMG for v0.1 | No Developer Program membership | ✅ verified |
 
-For complete technical details, FFI API, DuckDB schema, and implementation checklist, see the documents listed above.
+**The first two are not aspirations — they are unmet claims.** Sizes the app
+displays today are logical sizes labelled as physical. Do not treat them as
+correct when reasoning about output.
+
+---
+
+## Gotchas
+
+- **Xcode 16 synchronized groups.** Adding or deleting a source file needs no
+  `project.pbxproj` edit.
+- **SF Symbol names are not validated at build time.** A wrong name renders a
+  blank row. Several Material Design names survived from the HTML mock.
+- **A passing test suite does not mean the code is reachable.** Five services
+  and `helper-tool/` have full suites and zero callers.
+- **`DiskNode` is a value type.** Build a child completely before appending it
+  to its parent; appending copies.
+- **Never interpolate a tree or scan result into a log line.** Interpolation is
+  eager and will build a multi-GB string.
+
+For technical detail, the scan contract, and the implementation checklist, see
+the documents above.
