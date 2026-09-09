@@ -22,13 +22,40 @@ enum ScanState: Equatable, Sendable {
 }
 
 /// File type used for colour-coding the visualisation.
-enum FileKind: UInt8, CaseIterable, Sendable {
+enum FileKind: UInt8, CaseIterable, Sendable, Codable {
     case image = 0, video = 1, audio = 2, document = 3
     case archive = 4, application = 5, other = 6, directory = 7
+
+    /// Singular, human-facing name for one item of this kind.
+    var displayName: String {
+        switch self {
+        case .image:       return "Image"
+        case .video:       return "Video"
+        case .audio:       return "Audio"
+        case .document:    return "Document"
+        case .archive:     return "Archive"
+        case .application: return "Application"
+        case .directory:   return "Folder"
+        case .other:       return "File"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .image:       return "photo"
+        case .video:       return "film"
+        case .audio:       return "music.note"
+        case .document:    return "doc"
+        case .archive:     return "doc.zipper"
+        case .application: return "app"
+        case .directory:   return "folder"
+        case .other:       return "doc.questionmark"
+        }
+    }
 }
 
 /// One node in the flat array returned by the Rust engine.
-struct DiskNode: Identifiable, Equatable, Sendable, Hashable {
+struct DiskNode: Identifiable, Equatable, Sendable, Hashable, Codable {
     let id = UUID()
     var recordIndex: Int
     var name: String
@@ -39,7 +66,7 @@ struct DiskNode: Identifiable, Equatable, Sendable, Hashable {
     var isSystemProtected: Bool
     var modTimeSecs: Int64
     var depth: UInt16
-    var childCount: UInt32
+    var childCount: UInt32 = 0
     var children: [DiskNode]?
 
     static func == (lhs: DiskNode, rhs: DiskNode) -> Bool {
@@ -97,13 +124,185 @@ struct DuplicateGroup: Identifiable, Sendable {
     }
 }
 
+/// Top-level navigation phase. Drives the root window content in
+/// `DiskTrackerApp`. Transitions are explicit via `navigate(to:)` so
+/// tests + the UI agree on the state machine.
+enum AppPhase: Equatable, Sendable {
+    case onboarding
+    case dashboard
+    case scanResults
+}
+
+/// One of the categories shown in the Scan Results sidebar.
+/// Mirrors the mock's category list (Directories/Images/Videos/Documents/
+/// Applications/Archives/Other).
+enum ScanCategory: String, CaseIterable, Identifiable, Sendable {
+    case directories = "Directories"
+    case images = "Images"
+    case videos = "Videos"
+    case documents = "Documents"
+    case applications = "Applications"
+    case archives = "Archives"
+    case other = "Other"
+
+    var id: String { rawValue }
+
+    /// SF Symbol for the sidebar row. These were Material Icons names carried
+    /// over from the HTML mock, which render as blank rows on macOS.
+    var icon: String {
+        switch self {
+        case .directories:   return "folder"
+        case .images:        return "photo"
+        case .videos:        return "film"
+        case .documents:     return "doc.text"
+        case .applications:  return "app"
+        case .archives:      return "doc.zipper"
+        case .other:         return "ellipsis.circle"
+        }
+    }
+
+    /// Corresponding `FileKind`s this category aggregates.
+    var fileKinds: [FileKind] {
+        switch self {
+        case .directories:   return [.directory]
+        case .images:        return [.image]
+        case .videos:        return [.video]
+        case .documents:     return [.document, .audio] // docs + audio grouped
+        case .applications:  return [.application]
+        case .archives:      return [.archive]
+        case .other:         return [.other]
+        }
+    }
+}
+
 /// Global observable model.
 @Observable
-final class AppModel: ObservableObject, @unchecked Sendable {
+final class AppModel: @unchecked Sendable {
     var scanState: ScanState = .idle
-    var rootNode: DiskNode?
+    var rootNode: DiskNode? {
+        didSet {
+            cachedTreeStats = nil
+            cachedMatches = nil
+        }
+    }
     var selectedNode: DiskNode?
     var currentView: ViewMode = .sunburst
+
+    // MARK: - Navigation helpers
+
+    /// Explicit phase transition. Keeps the navigation state machine in
+    /// one place so tests can drive it and the UI never mutates `phase`
+    /// directly.
+    func navigate(to phase: AppPhase) {
+        self.phase = phase
+        if phase == .scanResults, rootNode == nil {
+            // Defensive: should not happen, but if a caller enters scan
+            // results with no tree, fall back to dashboard.
+            self.phase = .dashboard
+        }
+    }
+
+    /// Re-open Scan Results using a previously-recorded scan entry.
+    /// Loads the serialized tree from disk and sets it as the current tree.
+    /// No new filesystem scan is performed.
+    func restoreScanFromHistory(_ entry: ScanHistoryEntry) {
+        currentScanPath = entry.volumePath
+        phase = .scanResults
+
+        // Reading + decoding a recorded tree takes seconds on a large scan —
+        // never on the main thread.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self,
+                  let data = self.scanHistory.loadTree(for: entry),
+                  let tree = try? JSONDecoder().decode(DiskNode.self, from: data) else { return }
+            let stats = SmartFilterService.computeStats(in: tree)
+            DispatchQueue.main.async {
+                self.rootNode = tree
+                self.cachedTreeStats = stats
+                self.selectedNode = tree
+                self.scanState = .completed(totalSize: entry.totalSize, fileCount: entry.totalFiles)
+            }
+        }
+    }
+
+    /// Whether the user is currently allowed to start a new scan. While a
+    /// scan is in flight, the model blocks new scans (multi-scan is a
+    /// later phase). Use this to disable the toolbar "Scan" button.
+    var canStartNewScan: Bool {
+        if case .scanning = scanState { return false }
+        return true
+    }
+
+    /// Current root phase. Drives which view `ContentView` shows.
+    var phase: AppPhase = .dashboard
+
+    /// Selected category in the Scan Results sidebar.
+    var selectedCategory: ScanCategory = .directories {
+        didSet { if oldValue != selectedCategory { cachedMatches = nil } }
+    }
+
+    /// Text typed into the Scan Results search field.
+    var searchQuery: String = "" {
+        didSet { if oldValue != searchQuery { cachedMatches = nil } }
+    }
+
+    /// Whether the results area should show a flat, filtered list instead of
+    /// the directory hierarchy.
+    var isFiltering: Bool {
+        selectedCategory != .directories || !searchQuery.isEmpty
+    }
+
+    /// Cap on flat results. A category match over a large scan can run to
+    /// hundreds of thousands of rows, which no one scrolls through.
+    static let maxFilterMatches = 1_000
+
+    @ObservationIgnored
+    private var cachedMatches: [DiskNode]?
+
+    /// Files matching the selected category and search text, largest first.
+    /// Cached because it walks the whole tree.
+    var filteredNodes: [DiskNode] {
+        guard let root = rootNode else { return [] }
+        if let cached = cachedMatches { return cached }
+
+        let kinds = Set(selectedCategory.fileKinds)
+        let query = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        var matches: [DiskNode] = []
+
+        func walk(_ node: DiskNode) {
+            // Category .directories means "no kind filter" when searching —
+            // otherwise a search would only ever return folders.
+            let kindMatches = selectedCategory == .directories || kinds.contains(node.fileKind)
+            let textMatches = query.isEmpty || node.name.lowercased().contains(query)
+            if kindMatches && textMatches && node.path != root.path {
+                matches.append(node)
+            }
+            node.children?.forEach(walk)
+        }
+        walk(root)
+
+        let sorted = matches
+            .sorted { weightForSort($0) > weightForSort($1) }
+            .prefix(Self.maxFilterMatches)
+        let result = Array(sorted)
+        cachedMatches = result
+        return result
+    }
+
+    private func weightForSort(_ node: DiskNode) -> UInt64 {
+        node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize
+    }
+
+    /// Number of items in a category, for the sidebar badge.
+    func itemCount(for category: ScanCategory) -> Int {
+        let counts = treeStats.fileTypeCounts
+        return category.fileKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
+    }
+
+    /// Path currently being scanned (or last scanned). Used by the toolbar
+    /// + status bar so the user always sees which folder a running scan
+    /// belongs to.
+    var currentScanPath: String = NSHomeDirectory()
 
     /// Tracks which folder node IDs are expanded in the list view.
     var expandedNodeIds: Set<UUID> = []
@@ -283,12 +482,34 @@ final class AppModel: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Aggregate tree statistics (powers the sidebar breakdown).
+    /// Cache for `treeStats`. Invalidated whenever `rootNode` changes.
+    /// Observation-ignored so filling it inside the getter can't invalidate a
+    /// view mid-render; `treeStats` reads `rootNode` first, which is what
+    /// registers the dependency.
+    @ObservationIgnored
+    private var cachedTreeStats: SmartFilterService.TreeStats?
+
+    /// Aggregate tree statistics (powers the sidebar breakdown). Walks the
+    /// whole tree, so the result is cached — a computed walk on every view
+    /// body evaluation is a frame-rate killer on a large scan.
     var treeStats: SmartFilterService.TreeStats {
-        rootNode.map { SmartFilterService.computeStats(in: $0) } ?? SmartFilterService.TreeStats()
+        guard let root = rootNode else { return SmartFilterService.TreeStats() }
+        if let cached = cachedTreeStats { return cached }
+        let stats = SmartFilterService.computeStats(in: root)
+        cachedTreeStats = stats
+        return stats
     }
 
     // MARK: - Scanning
+
+    /// Entries the running (or last) scan has seen so far. The engine reports a
+    /// count, not a fraction — the total is unknowable until the walk ends.
+    var filesScanned: Int = 0
+
+    /// Bumped on every start and cancel, so a scan that finishes after being
+    /// cancelled (or superseded) can't overwrite newer state.
+    @ObservationIgnored
+    private var scanGeneration = 0
 
     func startScan(path: String) {
         // ponytail: allow re-scan from idle, completed, or failed state.
@@ -296,31 +517,55 @@ final class AppModel: ObservableObject, @unchecked Sendable {
         case .idle, .completed, .failed: break
         case .scanning: return  // only block during active scan
         }
+        currentScanPath = path
+        phase = .scanResults
         scanState = .scanning(progress: 0.0)
+        filesScanned = 0
+        scanGeneration += 1
+        let generation = scanGeneration
         let startTime = Date()
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let rootNode = self.scanner.scan(path: path, config: ScanConfig())
-            log.info("RootNode: \(String(describing: rootNode))")
+            let scanned = self.scanner.scan(path: path, config: ScanConfig()) { count in
+                DispatchQueue.main.async {
+                    guard generation == self.scanGeneration else { return }
+                    self.filesScanned = count
+                }
+            }
+            guard let rootNode = scanned else {
+                DispatchQueue.main.async {
+                    // A cancelled scan also returns nil — it bumped the
+                    // generation, so this is a real failure only if it didn't.
+                    guard generation == self.scanGeneration else { return }
+                    self.scanState = .failed(error: "Scan failed")
+                }
+                return
+            }
             let duration = Date().timeIntervalSince(startTime)
 
+            // Stats, serialization and the history write are all O(tree) and
+            // used to run on the main thread — that was the post-scan freeze.
+            let stats = SmartFilterService.computeStats(in: rootNode)
+            let count = stats.totalFiles + stats.totalDirectories
+            let size = rootNode.totalPhysicalSize
+            let treeFile = (try? JSONEncoder().encode(rootNode)).flatMap { self.scanHistory.saveTree($0) }
+
             DispatchQueue.main.async {
-                guard let rootNode = rootNode else {
-                    self.scanState = .failed(error: "Scan failed")
-                    return
-                }
+                guard generation == self.scanGeneration else { return }
                 self.rootNode = rootNode
+                self.cachedTreeStats = stats
                 self.activeSmartFilter = nil
                 self.smartFilterResults = []
-                let size = rootNode.physicalSize
-                let count = self.treeStats.totalFiles + self.treeStats.totalDirectories
                 self.scanState = .completed(totalSize: size, fileCount: count)
+
+                // Only the metadata + tree file name go through UserDefaults.
                 self.scanHistory.recordScan(
                     volumePath: path,
                     totalFiles: count,
                     totalSize: size,
-                    duration: duration
+                    duration: duration,
+                    treeFile: treeFile
                 )
                 self.startFreeSpaceMonitoring(for: URL(fileURLWithPath: path))
             }
@@ -328,8 +573,13 @@ final class AppModel: ObservableObject, @unchecked Sendable {
     }
 
     func cancelScan() {
+        // Bump first: the engine process dies, the in-flight scan returns nil,
+        // and the stale generation keeps it from reporting a failure.
+        scanGeneration += 1
+        scanner.cancel()
         scanState = .idle
         rootNode = nil
+        filesScanned = 0
         smartFilterResults = []
         activeSmartFilter = nil
     }

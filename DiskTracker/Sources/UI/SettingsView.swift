@@ -11,7 +11,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject private var model: AppModel
+    @Environment(AppModel.self) private var model
 
     /// Local toggle state, synced from `OnboardingSettings` on appear so the
     /// UI always reflects the persisted value.

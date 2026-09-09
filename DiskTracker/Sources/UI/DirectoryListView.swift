@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct DirectoryListView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
 
     var body: some View {
         if let root = model.rootNode {
@@ -57,7 +57,7 @@ struct DirectoryListView: View {
 private struct SortHeaderButton: View {
     let title: String
     let sortKey: AppModel.SortKey
-    @ObservedObject var model: AppModel
+    var model: AppModel
 
     var body: some View {
         Button {
@@ -78,7 +78,7 @@ private struct SortHeaderButton: View {
 
 struct DirectoryRowView: View {
     let node: DiskNode
-    @ObservedObject var model: AppModel
+    var model: AppModel
     @State private var isExpanded = false
 
     var body: some View {
@@ -119,7 +119,7 @@ struct DirectoryRowView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Text(formatBytes(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize))
+            Text(humanReadableBytes(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize))
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
             Text(node.fileKind == .directory ? "\(childCount(of: node))" : "—")
@@ -141,10 +141,6 @@ struct DirectoryRowView: View {
                 DirectoryRowView(node: child, model: model)
             }
         }
-    }
-
-    private func formatBytes(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     private func dateModifiedString(from secs: Int64) -> String {

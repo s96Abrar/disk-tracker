@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct TreemapView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
 
     // Color palette for file types (mirrors SunburstView)
     private let colors: [FileKind: Color] = [
@@ -34,11 +34,22 @@ struct TreemapView: View {
                     context.fill(path, with: .color(item.color.opacity(0.85)))
                     context.stroke(path, with: .color(.white.opacity(0.4)), lineWidth: 1)
 
-                    if item.width > 60 && item.height > 30 {
-                        let labelText = Text(item.label)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white)
-                        context.draw(labelText, at: CGPoint(x: item.x + item.width/2, y: item.y + item.height/2), anchor: .center)
+                    // Draw the label *inside* the rect: clipped so it can never
+                    // bleed into a neighbouring tile, and laid out in the tile's
+                    // width so long names truncate instead of overflowing.
+                    if item.width > 40 && item.height > 20 {
+                        let inset = rect.insetBy(dx: 4, dy: 2)
+                        guard let label = context.fittedLine(
+                            item.label,
+                            maxWidth: inset.width,
+                            font: .system(size: 10, weight: .medium),
+                            color: .white
+                        ), label.size.height <= inset.height else { continue }
+
+                        context.drawLayer { layer in
+                            layer.clip(to: Path(inset))
+                            layer.draw(label.text, at: CGPoint(x: inset.midX, y: inset.midY), anchor: .center)
+                        }
                     }
                 }
             }
@@ -102,29 +113,25 @@ struct TreemapView: View {
         return rects
     }
 
+    /// Directories carry their weight in `totalPhysicalSize`; their own
+    /// `physicalSize` is just the directory entry.
+    private func weight(_ node: DiskNode) -> Double {
+        Double(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize)
+    }
+
     private func buildTreemapItems(from root: DiskNode?, colors: [FileKind: Color]) -> [TreemapItem] {
         guard let root = root else { return [] }
 
-        var items: [TreemapItem] = []
-
-        // Add root node as an item
-        items.append(TreemapItem(
-            label: root.name,
-            value: Double(root.physicalSize),
-            color: colors[root.fileKind] ?? .gray
-        ))
-
-        // Recursively add children
-        if let children = root.children {
-            for child in children {
-                items.append(TreemapItem(
-                    label: child.name,
-                    value: Double(child.fileKind == .directory ? child.totalPhysicalSize : child.physicalSize),
-                    color: colors[child.fileKind] ?? .gray
-                ))
-            }
+        // The tiles are the root's *children* — the root itself is the canvas.
+        // Including it as a sibling of its own children double-counted the tree
+        // and left a stray zero-area tile.
+        guard let children = root.children, !children.isEmpty else {
+            return [TreemapItem(label: root.name, value: weight(root), color: colors[root.fileKind] ?? .gray)]
         }
-        return items
+
+        return children
+            .filter { weight($0) > 0 }
+            .map { TreemapItem(label: $0.name, value: weight($0), color: colors[$0.fileKind] ?? .gray) }
     }
 }
 

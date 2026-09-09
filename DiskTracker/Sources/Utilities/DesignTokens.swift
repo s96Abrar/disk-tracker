@@ -32,6 +32,17 @@ enum AnimationDuration {
     static let slow: Double = 0.35
 }
 
+/// Brand colors. Every view was spelling these out as `Color(hex:)` literals,
+/// so a palette change meant a find-and-replace across the UI.
+extension Color {
+    /// Primary accent — buttons, selection, links, sidebar highlights.
+    static let brandAccent = Color(hex: "5E5CE6")
+    /// "Healthy" green — status dots, capacity badges.
+    static let brandOK = Color(hex: "42E355")
+    /// Error/attention red.
+    static let brandAlert = Color(hex: "FFB4AB")
+}
+
 /// File type color palette (8 colors, WCAG AA compliant)
 extension Color {
     static let fileImage = Color(hex: "E74C3C")

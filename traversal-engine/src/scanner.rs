@@ -58,11 +58,18 @@ pub struct ScanResult {
     pub string_table: Vec<u8>,
 }
 
+/// How often the progress monitor samples the entry counter.
+const PROGRESS_POLL_MS: u64 = 50;
+
 /// Start a recursive scan of `root_path`.
+///
+/// `on_progress` receives the number of entries seen so far, sampled every
+/// `PROGRESS_POLL_MS`, plus one final exact count. The total is unknowable
+/// until the walk finishes, so this is a count and not a 0.0–1.0 fraction.
 pub fn scan_directory(
     root_path: &std::path::Path,
     config: ScanConfig,
-    on_progress: impl Fn(f64) + Send + Sync + 'static,
+    on_progress: impl Fn(u64) + Send + Sync + 'static,
 ) -> Result<ScanResult, ScanError> {
     let state = Arc::new(ScanState::new(config));
 
@@ -103,12 +110,27 @@ pub fn scan_directory(
     // shared lock (cheap, memcpy-only), keeping ids unique. Children are
     // spawned after the parent's records are committed, so parent_id is always
     // known. ponytail: scope-based work stealing — no manual thread pool.
+    // Progress reporting: one thread polls the shared counter, rather than
+    // threading a callback down through every walk task. Emits a final exact
+    // count after the walk stops.
+    let monitor_state = state.clone();
+    let scanning = Arc::new(AtomicBool::new(true));
+    let monitor_flag = scanning.clone();
+    let monitor = std::thread::spawn(move || {
+        while monitor_flag.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(PROGRESS_POLL_MS));
+            on_progress(monitor_state.progress.load(Ordering::Relaxed));
+        }
+        on_progress(monitor_state.progress.load(Ordering::Relaxed));
+    });
+
     let root_state = state.clone();
     scope(|s| {
         s.spawn(move |s| walk_dir_task(s, root_path.to_path_buf(), 1, 1, &root_state));
     });
 
-    on_progress(1.0);
+    scanning.store(false, Ordering::Relaxed);
+    let _ = monitor.join();
 
     // Build child_link from the accumulated results, then patch
     // first_child_id / child_count for all directory records.
@@ -162,6 +184,7 @@ fn walk_dir_task<'sc>(
     // critical section is short; ids stay unique because this is the only
     // place `next_id` advances.
     let mut children: Vec<(PathBuf, u64)> = Vec::new();
+    let entry_count = entries.len() as u64;
     {
         let mut records = state.results.lock().unwrap();
         let mut strings = state.string_table.lock().unwrap();
@@ -202,7 +225,9 @@ fn walk_dir_task<'sc>(
                 children.push((child_path, node_id));
             }
         }
-        state.progress.fetch_add(1, Ordering::Relaxed);
+        // Count entries, not directories — this is what the UI reports as
+        // "items scanned".
+        state.progress.fetch_add(entry_count, Ordering::Relaxed);
     } // lock released before spawning children
 
     for (child_path, child_id) in children {

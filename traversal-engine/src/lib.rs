@@ -42,22 +42,23 @@ pub unsafe extern "C" fn scanner_free(handle: *mut ScannerHandle) {
     }
 }
 
-/// Start a scan.  `on_progress` is called from an internal thread with 0.0–1.0.
+/// Start a scan.  `on_progress` is called from an internal thread with the
+/// number of entries scanned so far (the total is unknown until the walk ends).
 #[no_mangle]
 pub unsafe extern "C" fn scanner_start(
     handle: *mut ScannerHandle,
     path: *const c_char,
     config: ScanConfig,
-    on_progress: Option<unsafe extern "C" fn(f64)>,
+    on_progress: Option<unsafe extern "C" fn(u64)>,
 ) {
     if handle.is_null() { return; }
-    
+
     let path_str = CStr::from_ptr(path).to_string_lossy();
     let handle_ref = &mut *handle;
-    
-    let cb = move |p: f64| {
+
+    let cb = move |scanned: u64| {
         if let Some(f) = on_progress {
-            f(p);
+            f(scanned);
         }
     };
     

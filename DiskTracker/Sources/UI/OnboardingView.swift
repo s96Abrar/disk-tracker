@@ -16,14 +16,19 @@ import AppKit
 /// dismisses it (via "Start Scan" or "Choose Folder…", or by ticking
 /// "Don't show this again" and closing).
 struct OnboardingView: View {
-    @EnvironmentObject private var model: AppModel
+    @Environment(AppModel.self) private var model
 
     /// Whether to show the welcome screen on subsequent launches.
     @State private var dontShowAgain: Bool = OnboardingSettings.showAtLaunch == false
 
-    /// Action invoked when the user wants to start scanning. Lets the parent
-    /// (DiskTrackerApp) tear down the onboarding window and reveal ContentView.
-    var onStart: (String) -> Void
+    /// Action invoked when the user taps "Start Scan". The parent opens
+    /// a folder picker; on selection, kicks off a scan and transitions
+    /// to Scan Results. On cancellation, the parent falls back to dashboard.
+    var onStartScan: () -> Void
+
+    /// Action invoked when the user taps "Go to Dashboard" (skip scanning
+    /// from onboarding and go straight to the dashboard).
+    var onGoToDashboard: () -> Void
 
     var body: some View {
         ZStack {
@@ -98,7 +103,7 @@ struct OnboardingView: View {
             Spacer()
 
             HStack(spacing: Spacing.md) {
-                Image(systemName: "view.sidebar")
+                Image(systemName: "sidebar.left")
                 Image(systemName: "gear")
             }
             .font(.system(size: 14))
@@ -145,7 +150,7 @@ struct OnboardingView: View {
             FeatureCard(
                 icon: "magnifyingglass",
                 iconColor: Color(hex: "C2C1FF"),
-                iconBackground: Color(hex: "5E5CE6").opacity(0.18),
+                iconBackground: Color.brandAccent.opacity(0.18),
                 title: "Deep Scan",
                 subtitle: "Lightning fast indexing of your entire file system."
             )
@@ -158,7 +163,7 @@ struct OnboardingView: View {
             )
             FeatureCard(
                 icon: "trash.slash.fill",
-                iconColor: Color(hex: "FFB4AB"),
+                iconColor: Color.brandAlert,
                 iconBackground: Color(hex: "93000A").opacity(0.22),
                 title: "Clean Up",
                 subtitle: "Safely identify and remove unnecessary clutter."
@@ -170,8 +175,9 @@ struct OnboardingView: View {
     private var actions: some View {
         VStack(spacing: Spacing.sm) {
             Button {
-                // Honour user's pref: "Manual only" — let parent show folder picker.
-                onStart("") // empty path signals "open picker"
+                // "Start Scan" hands control back to the parent, which opens
+                // a folder picker. On cancel the parent falls back to dashboard.
+                onStartScan()
             } label: {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: "play.fill")
@@ -183,20 +189,22 @@ struct OnboardingView: View {
                 .padding(.vertical, 10)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(Color(hex: "5E5CE6"))
+                        .fill(Color.brandAccent)
                 )
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
 
+            // "Go to Dashboard" — skip scanning, jump straight to dashboard.
             Button {
-                onStart("")
+                onGoToDashboard()
             } label: {
-                Text("Choose Folder…")
+                Text("Go to Dashboard")
                     .font(.system(size: 12))
                     .foregroundStyle(Color(hex: "C2C1FF"))
             }
             .buttonStyle(.plain)
+            .help("Skip the scan and open the dashboard.")
 
             // "Don't show again" sits below the primary actions — bottom-left of the card.
             HStack {
@@ -284,8 +292,8 @@ private struct FeatureCard: View {
 #if DEBUG
 struct OnboardingView_Previews: PreviewProvider {
     static var previews: some View {
-        OnboardingView(onStart: { _ in })
-            .environmentObject(AppModel())
+        OnboardingView(onStartScan: {}, onGoToDashboard: {})
+            .environment(AppModel())
             .frame(width: 900, height: 600)
     }
 }

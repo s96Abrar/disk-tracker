@@ -222,6 +222,222 @@ final class SunburstViewTests: XCTestCase {
         XCTAssertTrue(gb.lowercased().contains("g"))
     }
 
+    // MARK: - Label Truncation
+
+    func testMiddleTruncationKeepsBothEnds() {
+        let name = "Genius.S03E07.720p.DSNP.WEBRip.x264-GalaxyTV.mp4"
+        let short = CanvasText.middleTruncated(name, to: 20)
+
+        XCTAssertEqual(short.count, 20)
+        XCTAssertTrue(short.hasPrefix("Genius"), "Head must survive: \(short)")
+        XCTAssertTrue(short.hasSuffix("mp4"), "Extension must survive: \(short)")
+        XCTAssertTrue(short.contains("…"))
+    }
+
+    func testShortLabelsAreLeftAlone() {
+        XCTAssertEqual(CanvasText.middleTruncated("S01", to: 20), "S01")
+        // Exactly at the budget is still untouched.
+        XCTAssertEqual(CanvasText.middleTruncated("abcde", to: 5), "abcde")
+    }
+
+    func testTruncationDegradesGracefullyAtTinyBudgets() {
+        XCTAssertEqual(CanvasText.middleTruncated("abcdefgh", to: 1), "…")
+        XCTAssertEqual(CanvasText.middleTruncated("abcdefgh", to: 0), "…")
+        XCTAssertEqual(CanvasText.middleTruncated("abcdefgh", to: 3).count, 3)
+    }
+
+    // MARK: - Ring Layout
+
+    private let palette: [FileKind: Color] = [
+        .image: .red, .video: .purple, .audio: .orange, .document: .blue,
+        .archive: .green, .application: .pink, .directory: .black, .other: .gray,
+    ]
+
+    /// Directory node shaped the way the scanner emits them: `physicalSize` is
+    /// the directory entry itself (~0) and the real weight lives in
+    /// `totalPhysicalSize`.
+    private func makeScannedDirectory(name: String, path: String, children: [DiskNode]) -> DiskNode {
+        var node = DiskNode(
+            recordIndex: 0,
+            name: name,
+            path: path,
+            logicalSize: 0,
+            physicalSize: 0,
+            fileKind: .directory,
+            isSystemProtected: false,
+            modTimeSecs: 0,
+            depth: 0,
+            children: children
+        )
+        node.totalPhysicalSize = children.reduce(UInt64(0)) {
+            $0 + ($1.fileKind == .directory ? $1.totalPhysicalSize : $1.physicalSize)
+        }
+        return node
+    }
+
+    /// The regression that made the whole chart blank: nothing rendered.
+    func testLayoutProducesSegmentsForAScannedTree() {
+        let root = makeScannedDirectory(name: "home", path: "/home", children: [
+            makeLeafNode(name: "a.mov", path: "/home/a.mov", size: 600, kind: .video),
+            makeLeafNode(name: "b.jpg", path: "/home/b.jpg", size: 400, kind: .image),
+        ])
+
+        let segments = SunburstLayout.build(root: root, maxRadius: 200, colors: palette)
+
+        XCTAssertGreaterThan(segments.count, 1, "Chart rendered empty")
+        XCTAssertEqual(segments.first?.innerRadius, 0, "First segment must be the centre disc")
+        XCTAssertEqual(segments.first?.label, "home")
+    }
+
+    func testLayoutReturnsNothingWithoutARoot() {
+        XCTAssertTrue(SunburstLayout.build(root: nil, maxRadius: 200, colors: palette).isEmpty)
+    }
+
+    /// A collapsed layout area must not produce garbage geometry.
+    func testLayoutReturnsNothingForNonPositiveRadius() {
+        let root = makeScannedDirectory(name: "home", path: "/home", children: [
+            makeLeafNode(name: "a.mov", path: "/home/a.mov", size: 600, kind: .video)
+        ])
+
+        XCTAssertTrue(SunburstLayout.build(root: root, maxRadius: 0, colors: palette).isEmpty)
+        XCTAssertTrue(SunburstLayout.build(root: root, maxRadius: -30, colors: palette).isEmpty)
+    }
+
+    /// Directories are weighted by totalPhysicalSize — weighting them by their
+    /// own physicalSize collapsed every folder wedge to nothing.
+    func testDirectoryWedgesAreWeightedByTotalPhysicalSize() {
+        let bigFolder = makeScannedDirectory(name: "Movies", path: "/home/Movies", children: [
+            makeLeafNode(name: "big.mov", path: "/home/Movies/big.mov", size: 900, kind: .video)
+        ])
+        let smallFile = makeLeafNode(name: "note.txt", path: "/home/note.txt", size: 100, kind: .document)
+        let root = makeScannedDirectory(name: "home", path: "/home", children: [bigFolder, smallFile])
+
+        let segments = SunburstLayout.build(root: root, maxRadius: 200, colors: palette)
+        let ringOne = segments.filter { $0.innerRadius > 0 && $0.innerRadius < 100 }
+
+        let folder = ringOne.first { $0.label == "Movies" }
+        XCTAssertNotNil(folder)
+        XCTAssertEqual(folder.map { $0.endAngle - $0.startAngle } ?? 0, 324, accuracy: 0.5) // 90% of 360
+    }
+
+    func testRingOneSweepsCoverTheFullCircle() {
+        let root = makeScannedDirectory(name: "home", path: "/home", children: [
+            makeLeafNode(name: "a", path: "/home/a", size: 500, kind: .video),
+            makeLeafNode(name: "b", path: "/home/b", size: 300, kind: .image),
+            makeLeafNode(name: "c", path: "/home/c", size: 200, kind: .document),
+        ])
+
+        let segments = SunburstLayout.build(root: root, maxRadius: 200, colors: palette)
+        let ringOne = segments.filter { $0.outerRadius <= 100 && $0.innerRadius > 0 }
+        let covered = ringOne.reduce(0.0) { $0 + ($1.endAngle - $1.startAngle) }
+
+        XCTAssertEqual(covered, 360, accuracy: 0.5)
+        XCTAssertEqual(ringOne.count, 3)
+    }
+
+    /// Nested directories get their own ring, so drill-down has something to
+    /// show without a click.
+    func testNestedChildrenProduceASecondRing() {
+        let inner = makeScannedDirectory(name: "Movies", path: "/home/Movies", children: [
+            makeLeafNode(name: "big.mov", path: "/home/Movies/big.mov", size: 1000, kind: .video)
+        ])
+        let root = makeScannedDirectory(name: "home", path: "/home", children: [inner])
+
+        let segments = SunburstLayout.build(root: root, maxRadius: 200, colors: palette)
+
+        XCTAssertTrue(segments.contains { $0.label == "big.mov" }, "Nested ring missing")
+    }
+
+    // MARK: - Hover Tooltip
+
+    func testShareOfRootUsesDirectoryTotals() {
+        let folder = makeScannedDirectory(name: "Movies", path: "/home/Movies", children: [
+            makeLeafNode(name: "big.mov", path: "/home/Movies/big.mov", size: 750, kind: .video)
+        ])
+        let file = makeLeafNode(name: "note.txt", path: "/home/note.txt", size: 250, kind: .document)
+        let root = makeScannedDirectory(name: "home", path: "/home", children: [folder, file])
+
+        XCTAssertEqual(SunburstLayout.fraction(of: folder, in: root), 0.75, accuracy: 0.001)
+        XCTAssertEqual(SunburstLayout.fraction(of: file, in: root), 0.25, accuracy: 0.001)
+    }
+
+    /// An empty folder would divide by zero and render as "nan%".
+    func testShareOfEmptyRootIsZeroNotNaN() {
+        let empty = makeScannedDirectory(name: "empty", path: "/empty", children: [])
+        let child = makeLeafNode(name: "ghost", path: "/empty/ghost", size: 0, kind: .other)
+
+        let share = SunburstLayout.fraction(of: child, in: empty)
+        XCTAssertFalse(share.isNaN)
+        XCTAssertEqual(share, 0)
+    }
+
+    func testEveryFileKindHasATooltipLabelAndIcon() {
+        for kind in FileKind.allCases {
+            XCTAssertFalse(kind.displayName.isEmpty, "\(kind) has no display name")
+            XCTAssertFalse(kind.iconName.isEmpty, "\(kind) has no icon")
+        }
+        XCTAssertEqual(FileKind.directory.displayName, "Folder")
+    }
+
+    // MARK: - Hit Testing
+
+    private func wedge(start: Double, end: Double, inner: CGFloat = 50, outer: CGFloat = 100) -> SunburstSegment {
+        SunburstSegment(
+            label: "W", startAngle: start, endAngle: end,
+            innerRadius: inner, outerRadius: outer, color: .red, size: 0.25
+        )
+    }
+
+    /// Canvas space is y-down, so a point at +x is 0°, +y is 90°.
+    private func point(angle: Double, radius: CGFloat, center: CGPoint) -> CGPoint {
+        CGPoint(
+            x: center.x + radius * cos(angle * .pi / 180),
+            y: center.y + radius * sin(angle * .pi / 180)
+        )
+    }
+
+    func testHitTestInsideWedge() {
+        let center = CGPoint(x: 200, y: 200)
+        let segment = wedge(start: 0, end: 90)
+
+        XCTAssertTrue(segment.contains(point(angle: 45, radius: 75, center: center), center: center))
+    }
+
+    func testHitTestRejectsWrongAngle() {
+        let center = CGPoint(x: 200, y: 200)
+        let segment = wedge(start: 0, end: 90)
+
+        XCTAssertFalse(segment.contains(point(angle: 135, radius: 75, center: center), center: center))
+        // Angles come back from atan2 as -180...180 and must be normalised —
+        // 315° is the case that regresses if that is dropped.
+        XCTAssertFalse(segment.contains(point(angle: 315, radius: 75, center: center), center: center))
+    }
+
+    func testHitTestRejectsWrongRadius() {
+        let center = CGPoint(x: 200, y: 200)
+        let segment = wedge(start: 0, end: 90)
+
+        XCTAssertFalse(segment.contains(point(angle: 45, radius: 20, center: center), center: center))
+        XCTAssertFalse(segment.contains(point(angle: 45, radius: 150, center: center), center: center))
+    }
+
+    /// The centre disc is "go up a level", not a wedge — it must never hit.
+    func testHitTestIgnoresCentreDisc() {
+        let center = CGPoint(x: 200, y: 200)
+        let centre = wedge(start: 0, end: 360, inner: 0, outer: 50)
+
+        XCTAssertFalse(centre.contains(point(angle: 0, radius: 25, center: center), center: center))
+    }
+
+    func testAdjacentWedgesDoNotBothClaimABoundaryPoint() {
+        let center = CGPoint(x: 200, y: 200)
+        let first = wedge(start: 0, end: 90)
+        let second = wedge(start: 90, end: 180)
+        let boundary = point(angle: 90, radius: 75, center: center)
+
+        XCTAssertNotEqual(first.contains(boundary, center: center), second.contains(boundary, center: center))
+    }
+
     // MARK: - Hover State Tests
 
     func testHoveredSegmentCanBeSet() {

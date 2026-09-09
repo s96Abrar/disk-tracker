@@ -28,7 +28,11 @@ fn main() {
     }
 
     let config = ScanConfig::default();
-    match scan_directory(std::path::Path::new(path), config, |_| {}) {
+    // Progress goes to stderr so stdout stays a single clean JSON document.
+    // Format: `progress <entries scanned so far>`, one per line.
+    match scan_directory(std::path::Path::new(path), config, |scanned| {
+        eprintln!("progress {}", scanned);
+    }) {
         Ok(result) => {
             #[derive(serde::Serialize)]
             struct RRecord {

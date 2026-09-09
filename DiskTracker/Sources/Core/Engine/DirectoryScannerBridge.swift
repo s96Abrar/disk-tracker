@@ -8,57 +8,12 @@
 //
 
 import Foundation
-import os.log
+import os
 
-// MARK: - Logger
-
-private enum LogLevel: String {
-    case debug   = "DEBUG"
-    case info    = "INFO"
-    case warning = "WARNING"
-    case error   = "ERROR"
-    case fault   = "FAULT"
-
-    var osType: OSLogType {
-        switch self {
-        case .debug:   return .debug
-        case .info:    return .info
-        case .warning: return .default
-        case .error:   return .error
-        case .fault:   return .fault
-        }
-    }
-}
-
-struct Logger {
-    private let oslog: OSLog
-    private let category: String
-
-    init(category: String) {
-        self.oslog = OSLog(subsystem: "com.disktracker", category: category)
-        self.category = category
-    }
-
-    private func timestamp() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: Date())
-    }
-
-    private func log(_ level: LogLevel, _ message: String, file: String = #file, function: String = #function, line: Int = #line) {
-        let filename = (file as NSString).lastPathComponent
-        let entry = "[\(timestamp())] [\(level.rawValue)] [\(category)] \(filename):\(line) \(function) — \(message)"
-        os_log("%{public}@", log: oslog, type: level.osType, entry)
-    }
-
-    func debug(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.debug, message, file: file, function: function, line: line) }
-    func info(_ message: String, file: String = #file, function: String = #function, line: Int = #line)  { log(.info, message, file: file, function: function, line: line) }
-    func warning(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.warning, message, file: file, function: function, line: line) }
-    func error(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.error, message, file: file, function: function, line: line) }
-    func fault(_ message: String, file: String = #file, function: String = #function, line: Int = #line) { log(.fault, message, file: file, function: function, line: line) }
-}
-
-let log = Logger(category: "bridge")
+/// `os.Logger` already timestamps, tags by subsystem/category, and captures
+/// source location — the hand-rolled wrapper that used to live here only
+/// re-formatted that into a string.
+private let log = Logger(subsystem: "com.disktracker", category: "bridge")
 
 // MARK: - ScanConfig
 
@@ -68,6 +23,22 @@ struct ScanConfig {
     var excludeHiddenFiles: Bool = false
     var followSymlinks: Bool = false
     var maxDepth: UInt32 = .max
+}
+
+/// Byte sink for draining a pipe from another thread.
+private final class DataSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock(); defer { lock.unlock() }
+        data.append(chunk)
+    }
+
+    var value: Data {
+        lock.lock(); defer { lock.unlock() }
+        return data
+    }
 }
 
 /// High-level scanner bridge. Calls Rust CLI as subprocess.
@@ -103,12 +74,30 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         }
         let candidates = [bundlePath].compactMap { $0 }
         self.rustBinary = candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? candidates[0]
-        log.info("binary \(rustBinary.path)")
+        log.info("binary \(self.rustBinary.path, privacy: .public)")
+    }
+
+    /// Prefix of a progress line on the engine's stderr: `progress <count>`.
+    private static let progressPrefix = "progress "
+
+    /// The running engine process, so `cancel()` can kill it.
+    private let taskLock = NSLock()
+    private var currentTask: Process?
+
+    /// Terminate the running scan, if any. Safe to call from any thread; the
+    /// in-flight `scan(path:config:onProgress:)` then returns nil.
+    func cancel() {
+        taskLock.lock()
+        let task = currentTask
+        taskLock.unlock()
+        task?.terminate()
     }
 
     /// Scan a path synchronously. Call from a background queue.
-    func scan(path: String, config: ScanConfig) -> DiskNode? {
-        log.info("scanning \(path)")
+    /// `onProgress` fires from a background thread with the running count of
+    /// entries the engine has seen.
+    func scan(path: String, config: ScanConfig, onProgress: (@Sendable (Int) -> Void)? = nil) -> DiskNode? {
+        log.info("scanning \(path, privacy: .public)")
 
         var args = ["scan", path, "--format=json"]
         if config.excludeHiddenFiles { args.append("--exclude-hidden") }
@@ -123,17 +112,55 @@ final class DirectoryScannerBridge: @unchecked Sendable {
 
         do {
             try task.run()
-            task.waitUntilExit()
         } catch {
-            log.error("task failed: \(error.localizedDescription)")
+            log.error("task failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
 
+        taskLock.lock()
+        currentTask = task
+        taskLock.unlock()
+        defer {
+            taskLock.lock()
+            currentTask = nil
+            taskLock.unlock()
+        }
+
+        // Drain both pipes *before* waiting on the child. A pipe buffer holds
+        // 64KB; the engine emits far more than that for any real directory, so
+        // it blocks in write() while we block in waitUntilExit() — a permanent
+        // deadlock. Reading first is what makes the child able to finish.
+        // stderr carries `progress <n>` lines during the walk, so it is read
+        // line by line rather than in one shot at EOF.
+        let errSink = DataSink()
+        let errDrained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            let handle = errorPipe.fileHandleForReading
+            var pending = Data()
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break }
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: 0x0A) {
+                    let line = Data(pending[pending.startIndex..<newline])
+                    pending = Data(pending[(newline + 1)...])
+                    if let scanned = Self.parseProgress(line) {
+                        onProgress?(scanned)
+                    } else {
+                        errSink.append(line)  // keep real diagnostics for the failure path
+                    }
+                }
+            }
+            errSink.append(pending)
+            errDrained.signal()
+        }
         let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        errDrained.wait()
+
         guard !data.isEmpty else {
-            let errData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let errStr = String(data: errData, encoding: .utf8) ?? ""
-            log.error("stderr: \(errStr)")
+            let errStr = String(data: errSink.value, encoding: .utf8) ?? ""
+            log.error("stderr: \(errStr, privacy: .public)")
             return nil
         }
 
@@ -144,14 +171,24 @@ final class DirectoryScannerBridge: @unchecked Sendable {
             return nil
         }
 
-        // Build DiskNode tree from flat records
-        log.debug("Output \(output)")
+        // Build DiskNode tree from flat records.
+        // Never interpolate `output` or the tree into a log line: interpolation
+        // is eager, so it builds a multi-gigabyte string for a real scan.
+        log.info("decoded \(output.records.count) records")
         guard var root = buildTree(records: output.records, stringTable: Data(output.string_table)) else {
             return nil
         }
         fixFullPaths(node: &root, parentPath: "")
         computeTotalPhysicalSizes(node: &root)
         return root
+    }
+
+    /// Parse a `progress <count>` line from the engine's stderr.
+    /// Returns nil for anything else, which is treated as a diagnostic.
+    static func parseProgress(_ line: Data) -> Int? {
+        guard let text = String(data: line, encoding: .utf8),
+              text.hasPrefix(progressPrefix) else { return nil }
+        return Int(text.dropFirst(progressPrefix.count).trimmingCharacters(in: .whitespaces))
     }
 
     /// Recursively compute full paths for all nodes in the tree.
@@ -253,7 +290,6 @@ final class DirectoryScannerBridge: @unchecked Sendable {
 
         // Sort children recursively: directories first, then files, both alphabetically.
         sortChildren(&rootNode)
-        log.debug("RootNode: \(String(describing: rootNode))")
 
         return rootNode
     }

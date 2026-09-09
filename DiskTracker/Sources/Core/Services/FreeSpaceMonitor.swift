@@ -82,7 +82,7 @@ struct FreeSpaceSnapshot: Sendable {
 ///   monitor.startMonitoring(volume: volume, interval: 5.0)
 ///   // Listen to monitor.$snapshot or monitor.$alertLevel
 @Observable
-final class FreeSpaceMonitor: ObservableObject, @unchecked Sendable {
+final class FreeSpaceMonitor: @unchecked Sendable {
 
     /// Latest snapshot for the monitored volume.
     var snapshot: FreeSpaceSnapshot?

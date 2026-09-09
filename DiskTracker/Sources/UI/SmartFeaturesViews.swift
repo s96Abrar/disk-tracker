@@ -11,7 +11,7 @@ import SwiftUI
 private struct SortHeaderButton: View {
     let title: String
     let sortKey: AppModel.SortKey
-    @ObservedObject var model: AppModel
+    var model: AppModel
     var body: some View {
         Button {
             model.toggleSort(for: sortKey)
@@ -34,7 +34,7 @@ private struct SortHeaderButton: View {
 
 /// Lists SmartFilterService results and routes delete requests back to ContentView.
 struct SmartFilterResultsView: View {
-    @ObservedObject var model: AppModel
+    var model: AppModel
     var onDeleteRequested: ((DiskNode) -> Void)?
 
     var body: some View {
@@ -276,7 +276,7 @@ struct LowSpaceBanner: View {
 
 /// Live compact readout of the monitored volume's free space.
 struct FreeSpaceIndicator: View {
-    @ObservedObject var monitor: FreeSpaceMonitor
+    var monitor: FreeSpaceMonitor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -2,6 +2,16 @@
 //  DiskTrackerApp.swift
 //  DiskTracker
 //
+//  App entry point. Owns the root `AppModel` and routes between the
+//  three top-level phases:
+//
+//      onboarding ─┐
+//                  ├─► dashboard ─► scanResults
+//                  │       ▲           │
+//                  └───────┴───────────┘  (back)
+//
+//  Routing is driven by `model.phase`. Folder-picker cancellation
+//  falls back to dashboard (per spec).
 //
 
 import SwiftUI
@@ -9,94 +19,105 @@ import AppKit
 
 @main
 struct DiskTrackerApp: App {
-    @StateObject private var appModel = AppModel()
+    @State private var appModel = AppModel()
 
-    /// Root-level gate: when true, the welcome screen is presented instead of
-    /// the main `ContentView`. Toggled off the moment the user starts a scan
-    /// or explicitly closes the welcome screen via Settings.
+    /// Local copy of the pref so re-opening onboarding via Settings works
+    /// without an extra hop through the model.
     @State private var showingOnboarding: Bool = OnboardingSettings.showAtLaunch
-
-    /// Set up the runtime listener that lets Settings re-trigger onboarding
-    /// without restarting the app.
-    init() {
-        NotificationCenter.default.addObserver(
-            forName: .diskTrackerRequestShowOnboarding,
-            object: nil,
-            queue: .main
-        ) { _ in
-            // Dispatch onto the main actor for @State mutation.
-            DispatchQueue.main.async {
-                OnboardingSettings.showAtLaunch = true
-                DiskTrackerApp.requestOnboardingPresentation?()
-            }
-        }
-    }
-
-    /// Closure set by `rootView.onAppear` so the app shell can flip the
-    /// `showingOnboarding` state from outside its view hierarchy.
-    static var requestOnboardingPresentation: (() -> Void)?
 
     var body: some Scene {
         WindowGroup {
             rootView
-                .environmentObject(appModel)
-                .frame(minWidth: 900, minHeight: 600)
+                .environment(appModel)
+                .frame(minWidth: 1100, minHeight: 720)
         }
         .windowResizability(.contentSize)
 
-        // Settings scene — exposes the "Show welcome screen at launch" toggle.
         Settings {
             SettingsView()
-                .environmentObject(appModel)
+                .environment(appModel)
         }
     }
 
+    // MARK: - Routing
+
     @ViewBuilder
     private var rootView: some View {
+        // Onboarding wins over everything else while it's still pending.
         if showingOnboarding {
-            OnboardingView { _ in
-                // "Start Scan" / "Choose Folder…" both dismiss onboarding and
-                // hand the user over to the main window with a folder picker.
-                showingOnboarding = false
-                // Defer the picker until after ContentView has appeared so the
-                // open panel attaches to the right window.
-                DispatchQueue.main.async {
-                    presentFolderPickerAndStartScan()
+            OnboardingView(
+                onStartScan: {
+                    // User tapped "Start Scan" → folder picker; on success
+                    // the model itself advances to .scanResults. On cancel
+                    // we fall through to dashboard.
+                    showingOnboarding = false
+                    DispatchQueue.main.async {
+                        let didStart = presentFolderPickerAndStartScan()
+                        if !didStart {
+                            // Cancellation → go to dashboard (per spec).
+                            appModel.navigate(to: .dashboard)
+                        }
+                    }
+                },
+                onGoToDashboard: {
+                    // User opted to skip the scan from onboarding → dashboard.
+                    showingOnboarding = false
+                    appModel.navigate(to: .dashboard)
                 }
-            }
-            .onAppear {
-                // Make sure the onboarding window is large enough.
-                NSApp.windows.first?
-                    .setContentSize(NSSize(width: 900, height: 600))
-                // Expose a hook so the notification observer can flip us back
-                // to onboarding from Settings → "Show Welcome Screen Now".
-                DiskTrackerApp.requestOnboardingPresentation = {
-                    showingOnboarding = true
-                }
-            }
+            )
         } else {
-            ContentView()
+            // Sync the local pref with the model's phase so a manual
+            // change persists if user later toggles via Settings.
+            phaseRouter
                 .onAppear {
-                    DiskTrackerApp.requestOnboardingPresentation = {
-                        showingOnboarding = true
+                    if appModel.phase == .onboarding {
+                        appModel.navigate(to: .dashboard)
                     }
                 }
         }
     }
 
-    /// Opens an `NSOpenPanel` for a directory and, on selection, kicks off
-    /// a scan. Mirrors the folder-picker flow already used in the toolbar.
-    private func presentFolderPickerAndStartScan() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-        panel.title = "Select Folder to Scan"
-        panel.message = "Choose a directory to analyze with Disk Tracker"
-        panel.prompt = "Scan"
-        if panel.runModal() == .OK, let url = panel.url {
-            appModel.startScan(path: url.path)
+    @ViewBuilder
+    private var phaseRouter: some View {
+        switch appModel.phase {
+        case .onboarding:
+            // Defensive — rootView already handles the local flag above.
+            Color.clear
+
+        case .dashboard:
+            DashboardView(model: appModel)
+
+        case .scanResults:
+            ScanResultsView(
+                model: appModel,
+                onBack: { appModel.navigate(to: .dashboard) }
+            )
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Opens an `NSOpenPanel` for a directory and starts a scan on selection.
+    /// Returns `true` when a scan was started, `false` on cancellation.
+    @discardableResult
+    private func presentFolderPickerAndStartScan() -> Bool {
+        guard let url = FolderPicker.chooseScanFolder() else { return false }
+        appModel.startScan(path: url.path)
+        return true
+    }
+
+    // MARK: - Settings → "Show Welcome Screen Now" listener
+
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: .diskTrackerRequestShowOnboarding,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            DispatchQueue.main.async {
+                OnboardingSettings.showAtLaunch = true
+                self.showingOnboarding = true
+            }
         }
     }
 }

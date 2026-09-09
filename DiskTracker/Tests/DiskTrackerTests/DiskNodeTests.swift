@@ -79,7 +79,15 @@ final class DiskNodeTests: XCTestCase {
         )
 
         XCTAssertEqual(parent.totalLogicalSize, 300)
-        XCTAssertEqual(parent.totalPhysicalSize, 150)
+
+        // totalPhysicalSize is a stored field filled in by
+        // DirectoryScannerBridge.computeTotalPhysicalSizes once the whole tree
+        // exists — it is not derived on access, so it stays 0 until set.
+        XCTAssertEqual(parent.totalPhysicalSize, 0)
+
+        var summed = parent
+        summed.totalPhysicalSize = parent.children!.reduce(0) { $0 + $1.physicalSize }
+        XCTAssertEqual(summed.totalPhysicalSize, 150)
     }
 
     func testDiskNodeEqualityAndHashable() {

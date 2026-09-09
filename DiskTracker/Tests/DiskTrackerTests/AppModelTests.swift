@@ -216,7 +216,138 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(callbackCount, 1)  // Only triggered once
     }
 
+    // MARK: - Category / Search Filtering
+
+    private func makeFilterTree() -> DiskNode {
+        var photo = makeLeafNode(name: "holiday.jpg", path: "/home/holiday.jpg", size: 300)
+        photo.fileKind = .image
+        var movie = makeLeafNode(name: "holiday-movie.mp4", path: "/home/holiday-movie.mp4", size: 900)
+        movie.fileKind = .video
+        var nested = makeLeafNode(name: "avatar.png", path: "/home/sub/avatar.png", size: 100)
+        nested.fileKind = .image
+        let sub = makeTreeNode(name: "sub", path: "/home/sub", children: [nested])
+        return makeTreeNode(name: "home", path: "/home", children: [photo, movie, sub])
+    }
+
+    func testCategoryFilterReturnsMatchingKindsAcrossTheTree() {
+        let model = AppModel()
+        model.rootNode = makeFilterTree()
+        model.selectedCategory = .images
+
+        let names = model.filteredNodes.map(\.name)
+        XCTAssertEqual(Set(names), ["holiday.jpg", "avatar.png"], "Nested matches must be found too")
+    }
+
+    func testSearchFiltersByNameWithinTheWholeTree() {
+        let model = AppModel()
+        model.rootNode = makeFilterTree()
+        model.searchQuery = "holiday"
+
+        let names = model.filteredNodes.map(\.name)
+        XCTAssertTrue(names.contains("holiday.jpg"))
+        XCTAssertTrue(names.contains("holiday-movie.mp4"))
+        XCTAssertFalse(names.contains("avatar.png"))
+    }
+
+    func testSearchIsCaseInsensitiveAndCombinesWithCategory() {
+        let model = AppModel()
+        model.rootNode = makeFilterTree()
+        model.selectedCategory = .images
+        model.searchQuery = "HOLIDAY"
+
+        XCTAssertEqual(model.filteredNodes.map(\.name), ["holiday.jpg"])
+    }
+
+    /// The cache must follow the inputs, or the list keeps showing the
+    /// previous category's results.
+    func testFilterCacheInvalidatesOnCategoryAndQueryChange() {
+        let model = AppModel()
+        model.rootNode = makeFilterTree()
+        model.selectedCategory = .images
+        XCTAssertEqual(model.filteredNodes.count, 2)
+
+        model.selectedCategory = .videos
+        XCTAssertEqual(model.filteredNodes.map(\.name), ["holiday-movie.mp4"])
+
+        model.searchQuery = "nothing-matches-this"
+        XCTAssertTrue(model.filteredNodes.isEmpty)
+    }
+
+    func testIsFilteringOnlyWhenNarrowed() {
+        let model = AppModel()
+        XCTAssertFalse(model.isFiltering, "Directories with no query is the unfiltered hierarchy view")
+
+        model.searchQuery = "x"
+        XCTAssertTrue(model.isFiltering)
+
+        model.searchQuery = ""
+        model.selectedCategory = .archives
+        XCTAssertTrue(model.isFiltering)
+    }
+
+    func testCategoryCountsComeFromTreeStats() {
+        let model = AppModel()
+        model.rootNode = makeFilterTree()
+
+        XCTAssertEqual(model.itemCount(for: .images), 2)
+        XCTAssertEqual(model.itemCount(for: .videos), 1)
+        XCTAssertEqual(model.itemCount(for: .archives), 0)
+    }
+
+    // MARK: - Engine Progress Protocol
+    //
+    // The engine reports live progress as `progress <count>` lines on stderr;
+    // anything else on that stream is a diagnostic. Lives here rather than in
+    // its own file because the test target is not filesystem-synchronized —
+    // new files need manual pbxproj entries.
+
+    private func parseProgress(_ line: String) -> Int? {
+        DirectoryScannerBridge.parseProgress(Data(line.utf8))
+    }
+
+    func testParsesProgressLine() {
+        XCTAssertEqual(parseProgress("progress 12345"), 12345)
+        XCTAssertEqual(parseProgress("progress 0"), 0)
+    }
+
+    func testIgnoresNonProgressLines() {
+        XCTAssertNil(parseProgress("Scan error: PermissionDenied"))
+        XCTAssertNil(parseProgress(""))
+        XCTAssertNil(parseProgress("progressing 5"))
+    }
+
+    /// A malformed count must not read as a progress update — otherwise a
+    /// garbled line silently resets the live counter to zero.
+    func testRejectsProgressLineWithoutValidCount() {
+        XCTAssertNil(parseProgress("progress"))
+        XCTAssertNil(parseProgress("progress abc"))
+    }
+
     // MARK: - Tree Stats Tests
+
+    /// `treeStats` is cached; the cache must die with the tree it described.
+    /// Guards the `rootNode.didSet` invalidation — without it the sidebar keeps
+    /// reporting the previous scan's numbers forever.
+    func testTreeStatsCacheInvalidatesWhenRootChanges() {
+        let model = AppModel()
+        model.rootNode = makeTreeNode(
+            name: "one", path: "/one",
+            children: [makeLeafNode(name: "a.txt", path: "/one/a.txt", size: 1000)]
+        )
+        XCTAssertEqual(model.treeStats.totalFiles, 1)
+
+        model.rootNode = makeTreeNode(
+            name: "two", path: "/two",
+            children: [
+                makeLeafNode(name: "b.txt", path: "/two/b.txt", size: 1000),
+                makeLeafNode(name: "c.txt", path: "/two/c.txt", size: 1000),
+            ]
+        )
+        XCTAssertEqual(model.treeStats.totalFiles, 2, "Stale stats — rootNode didSet did not clear the cache")
+
+        model.rootNode = nil
+        XCTAssertEqual(model.treeStats.totalFiles, 0)
+    }
 
     func testTreeStatsReturnsZerosWhenNoRoot() {
         let model = AppModel()
