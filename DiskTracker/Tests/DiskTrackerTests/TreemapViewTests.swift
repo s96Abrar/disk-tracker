@@ -346,7 +346,7 @@ final class TreemapLevelOfDetailTests: XCTestCase {
     }
 
     private func layout(_ m: AppModel, _ size: CGSize) -> [TreemapRect] {
-        TreemapView(model: m).layoutForTesting(in: size)
+        TreemapView.layout(of: m.rootNode, in: size)
     }
 
     func testDropsSlivers() {
@@ -402,5 +402,90 @@ final class TreemapLevelOfDetailTests: XCTestCase {
     func testEmptyTreeLaysOutNothing() {
         let m = AppModel()
         XCTAssertTrue(layout(m, CGSize(width: 400, height: 300)).isEmpty)
+    }
+}
+
+// MARK: - Drill-down
+
+/// The sunburst could descend into a folder; the treemap could not, so the two
+/// views disagreed about what "zoom" meant. These cover the layout half —
+/// which node's children get drawn. The gesture and breadcrumb are SwiftUI and
+/// are exercised by hand.
+final class TreemapDrillDownTests: XCTestCase {
+
+    private func file(_ name: String, _ path: String, _ size: UInt64) -> DiskNode {
+        DiskNode(recordIndex: 0, name: name, path: path,
+                 logicalSize: size, physicalSize: size, fileKind: .document,
+                 isSystemProtected: false, modTimeSecs: 0, depth: 2,
+                 childCount: 0, children: [], totalPhysicalSize: size)
+    }
+
+    private func dir(_ name: String, _ path: String, _ children: [DiskNode]) -> DiskNode {
+        DiskNode(recordIndex: 0, name: name, path: path,
+                 logicalSize: 0, physicalSize: 0, fileKind: .directory,
+                 isSystemProtected: false, modTimeSecs: 0, depth: 1,
+                 childCount: UInt32(children.count), children: children,
+                 totalPhysicalSize: children.reduce(0) { $0 + $1.totalPhysicalSize })
+    }
+
+    /// root/
+    ///   photos/   holiday.jpg 5000, cat.png 3000
+    ///   notes.txt 100
+    private func makeModel() -> AppModel {
+        let photos = dir("photos", "/root/photos", [
+            file("holiday.jpg", "/root/photos/holiday.jpg", 5000),
+            file("cat.png", "/root/photos/cat.png", 3000),
+        ])
+        let root = dir("root", "/root", [photos, file("notes.txt", "/root/notes.txt", 100)])
+        let model = AppModel()
+        model.rootNode = root
+        return model
+    }
+
+    private let canvas = CGSize(width: 800, height: 600)
+
+    func testStartsAtTheScanRoot() {
+        let model = makeModel()
+        let labels = TreemapView.layout(of: model.rootNode, in: canvas).map(\.label).sorted()
+        XCTAssertEqual(labels, ["notes.txt", "photos"], "the root's own children")
+    }
+
+    /// The tiles must come from the focused folder, not always the scan root —
+    /// that was the whole gap.
+    /// The tiles must come from the focused folder, not always the scan root —
+    /// that was the whole gap.
+    func testLayoutFollowsTheFocusedFolder() throws {
+        let model = makeModel()
+        let photos = try XCTUnwrap(model.rootNode?.children?.first { $0.name == "photos" })
+
+        let labels = TreemapView.layout(of: photos, in: canvas).map(\.label).sorted()
+        XCTAssertEqual(labels, ["cat.png", "holiday.jpg"])
+    }
+
+    /// Descending must not change the sizes, only which slice is shown.
+    func testDescendingPreservesSizes() throws {
+        let model = makeModel()
+        let photos = try XCTUnwrap(model.rootNode?.children?.first { $0.name == "photos" })
+
+        let tiles = TreemapView.layout(of: photos, in: canvas)
+        let holiday = try XCTUnwrap(tiles.first { $0.label == "holiday.jpg" })
+        let cat = try XCTUnwrap(tiles.first { $0.label == "cat.png" })
+
+        XCTAssertGreaterThan(holiday.frame.width * holiday.frame.height,
+                             cat.frame.width * cat.frame.height,
+                             "5000 bytes should occupy more area than 3000")
+    }
+
+    func testTilesCarryTheirNodeSoDescendingKnowsWhereToGo() throws {
+        let model = makeModel()
+        let tiles = TreemapView.layout(of: model.rootNode, in: canvas)
+        let photos = try XCTUnwrap(tiles.first { $0.label == "photos" })
+
+        XCTAssertEqual(photos.node?.path, "/root/photos")
+        XCTAssertEqual(photos.node?.fileKind, .directory)
+    }
+
+    func testNoFocusedNodeLaysOutNothing() {
+        XCTAssertTrue(TreemapView.layout(of: nil, in: canvas).isEmpty)
     }
 }

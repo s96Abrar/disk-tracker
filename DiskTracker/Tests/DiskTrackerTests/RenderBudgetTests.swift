@@ -68,15 +68,13 @@ final class RenderBudgetTests: XCTestCase {
     // MARK: - Treemap
 
     func testTreemapLayoutStaysInsideTheFrameBudget() {
-        let model = AppModel()
-        model.rootNode = wideTree(childCount: 50_000)
-        let view = TreemapView(model: model)
+        let root = wideTree(childCount: 50_000)
         let size = CGSize(width: 1400, height: 900)
 
         // Warm once: the first call pays for lazy allocation, not layout.
-        _ = view.layoutForTesting(in: size)
+        _ = TreemapView.layout(of: root, in: size)
 
-        let elapsed = time { _ = view.layoutForTesting(in: size) }
+        let elapsed = time { _ = TreemapView.layout(of: root, in: size) }
         print("treemap layout, 50k children: \(String(format: "%.2f", elapsed * 1000))ms")
 
         XCTAssertLessThan(
@@ -89,19 +87,15 @@ final class RenderBudgetTests: XCTestCase {
     /// The cull is what makes the budget reachable: without it, layout is
     /// proportional to the child count rather than to the tiles on screen.
     func testTreemapLayoutBarelyGrowsWithHiddenChildren() {
-        let view10k = TreemapView(model: {
-            let m = AppModel(); m.rootNode = wideTree(childCount: 10_000); return m
-        }())
-        let view100k = TreemapView(model: {
-            let m = AppModel(); m.rootNode = wideTree(childCount: 100_000); return m
-        }())
+        let root10k = wideTree(childCount: 10_000)
+        let root100k = wideTree(childCount: 100_000)
         let size = CGSize(width: 1400, height: 900)
 
-        _ = view10k.layoutForTesting(in: size)
-        _ = view100k.layoutForTesting(in: size)
+        _ = TreemapView.layout(of: root10k, in: size)
+        _ = TreemapView.layout(of: root100k, in: size)
 
-        let small = time { _ = view10k.layoutForTesting(in: size) }
-        let large = time { _ = view100k.layoutForTesting(in: size) }
+        let small = time { _ = TreemapView.layout(of: root10k, in: size) }
+        let large = time { _ = TreemapView.layout(of: root100k, in: size) }
         print("treemap layout: 10k \(String(format: "%.2f", small * 1000))ms, "
               + "100k \(String(format: "%.2f", large * 1000))ms")
 
@@ -116,10 +110,8 @@ final class RenderBudgetTests: XCTestCase {
     }
 
     func testTreemapProducesAWorkableNumberOfTiles() {
-        let model = AppModel()
-        model.rootNode = wideTree(childCount: 100_000)
-        let tiles = TreemapView(model: model)
-            .layoutForTesting(in: CGSize(width: 1400, height: 900))
+        let tiles = TreemapView.layout(of: wideTree(childCount: 100_000),
+                                       in: CGSize(width: 1400, height: 900))
 
         print("treemap tiles from 100k children: \(tiles.count)")
         XCTAssertLessThan(tiles.count, 20_000, "far more tiles than the canvas has pixels for")

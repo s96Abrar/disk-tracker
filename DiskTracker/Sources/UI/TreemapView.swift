@@ -26,9 +26,20 @@ struct TreemapView: View {
     /// node was right-clicked — a Canvas has no per-tile view to attach one to.
     @State private var hoveredIndex: Int?
 
+    /// Folder the tiles are currently drawn from. nil = the scan root.
+    ///
+    /// Held here rather than on `AppModel` for the same reason the sunburst
+    /// holds its own: descending is a property of this view, and the two
+    /// visualizations should not yank each other around when the user switches
+    /// between them.
+    @State private var focusPath: [DiskNode] = []
+
+    /// The node whose children are being drawn.
+    private var currentRoot: DiskNode? { focusPath.last ?? model.rootNode }
+
     var body: some View {
         GeometryReader { geometry in
-            let layout = calculateSquarifiedLayout(in: geometry.size)
+            let layout = Self.layout(of: currentRoot, in: geometry.size, colors: colors)
 
             Canvas { context, _ in
                 for (index, item) in layout.enumerated() {
@@ -80,14 +91,77 @@ struct TreemapView: View {
                     guard let hit = layout.first(where: { $0.frame.contains(event.location) }),
                           let node = hit.node else { return }
                     model.selectNode(node)
+                    // Descending into an empty folder would show a blank
+                    // canvas with no way to tell it apart from a bug.
+                    if node.fileKind == .directory, node.children?.isEmpty == false {
+                        focusPath.append(node)
+                        hoveredIndex = nil
+                    }
                 }
             )
             .nodeActions(model: model) {
                 hoveredIndex.flatMap { layout.indices.contains($0) ? layout[$0].node : nil }
             }
             .onChange(of: model.rootNode) { _, _ in
+                // A new scan invalidates the old path entirely.
+                focusPath = []
                 hoveredIndex = nil
             }
+            .overlay(alignment: .top) { breadcrumb }
+        }
+    }
+
+    /// Path back to the scan root. Without it, descending is a one-way trip:
+    /// the tiles give no indication of how deep the view has gone.
+    @ViewBuilder
+    private var breadcrumb: some View {
+        if !focusPath.isEmpty, let root = model.rootNode {
+            HStack(spacing: 4) {
+                Button {
+                    focusPath = []
+                    hoveredIndex = nil
+                } label: {
+                    Label(root.name, systemImage: "house")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.plain)
+
+                ForEach(Array(focusPath.enumerated()), id: \.element.id) { index, node in
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    Button {
+                        // Truncating to this node is what makes the crumb a
+                        // jump rather than a single step back.
+                        focusPath = Array(focusPath.prefix(index + 1))
+                        hoveredIndex = nil
+                    } label: {
+                        Text(node.name)
+                            .font(.system(size: 11,
+                                          weight: index == focusPath.count - 1 ? .semibold : .regular))
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer(minLength: Spacing.sm)
+
+                Button {
+                    focusPath.removeLast()
+                    hoveredIndex = nil
+                } label: {
+                    Label("Up", systemImage: "arrow.up.left")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.upArrow, modifiers: .command)
+                .help("Go up one level (⌘↑)")
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, 6)
+            .background(.regularMaterial)
+            .clipShape(Capsule())
+            .padding(Spacing.sm)
         }
     }
 
@@ -99,16 +173,14 @@ struct TreemapView: View {
     /// algorithm keeps packing into the current row until it reaches this.
     private static let minRowThickness: CGFloat = 20
 
-    /// Test seam: the layout is the behaviour worth asserting on, and driving
-    /// it through a rendered Canvas would prove far less.
-    func layoutForTesting(in size: CGSize) -> [TreemapRect] {
-        calculateSquarifiedLayout(in: size)
-    }
-
-    private func calculateSquarifiedLayout(in size: CGSize) -> [TreemapRect] {
+    /// Layout is a pure function of the folder being shown and the space
+    /// available, which is also what makes drill-down testable: `@State` has no
+    /// storage on a view that was never installed, so a test cannot drive
+    /// `focusPath` directly — it passes the focused node instead.
+    static func layout(of root: DiskNode?, in size: CGSize, colors: [FileKind: Color] = [:]) -> [TreemapRect] {
         guard size.width > 0, size.height > 0 else { return [] }
 
-        let items = visibleItems(in: size)
+        let items = visibleItems(of: root, in: size, colors: colors)
         guard !items.isEmpty else { return [] }
 
         var rects: [TreemapRect] = []
@@ -193,8 +265,9 @@ struct TreemapView: View {
     /// traffic on each. Working out the threshold first, then building a
     /// `TreemapItem` only for survivors, keeps the copies proportional to what
     /// is drawn rather than to what was scanned.
-    private func visibleItems(in size: CGSize) -> [TreemapItem] {
-        guard let root = model.rootNode else { return [] }
+    private static func visibleItems(of root: DiskNode?, in size: CGSize,
+                                     colors: [FileKind: Color]) -> [TreemapItem] {
+        guard let root else { return [] }
 
         // The tiles are the root's *children* — the root itself is the canvas.
         guard let children = root.children, !children.isEmpty else {
@@ -235,14 +308,14 @@ struct TreemapView: View {
 
     /// Directories carry their weight in `totalPhysicalSize`; their own
     /// `physicalSize` is just the directory entry.
-    private func weight(_ node: DiskNode) -> Double {
+    private static func weight(_ node: DiskNode) -> Double {
         Double(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize)
     }
 
     /// Weight of `children[index]` without copying the element — see the note
     /// in `visibleItems`.
     @inline(__always)
-    private func weight(_ children: [DiskNode], _ index: Int) -> Double {
+    private static func weight(_ children: [DiskNode], _ index: Int) -> Double {
         Double(children[index].fileKind == .directory
                ? children[index].totalPhysicalSize
                : children[index].physicalSize)
