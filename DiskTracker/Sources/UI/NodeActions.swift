@@ -180,9 +180,14 @@ private struct NodeActionsModifier: ViewModifier {
     @ViewBuilder
     private func menu(for node: DiskNode) -> some View {
         Group {
-            // Opens in the default app. Named for what it does — the service
-            // method behind it is NSWorkspace.open, not a Quick Look panel.
-            // Real Quick Look is P0-6.
+            Button {
+                QuickLookPreview.shared.toggle(url: URL(fileURLWithPath: node.path))
+            } label: {
+                Label("Quick Look", systemImage: "eye")
+            }
+
+            // Distinct from Quick Look: this hands the file to its default
+            // application rather than previewing it in place.
             Button {
                 FileOperationsService.shared.openInDefaultApp(
                     url: URL(fileURLWithPath: node.path))

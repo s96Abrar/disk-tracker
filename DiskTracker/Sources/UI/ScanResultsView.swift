@@ -57,6 +57,10 @@ struct ScanResultsView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(deletion)
         .deletionConfirmation(deletion, model: model)
+        // Spacebar previews the inspected node, as it does in Finder.
+        .quickLookPreview { model.selectedNode }
+        // A preview of a file that no longer exists is a stale window.
+        .onChange(of: model.rootNode) { _, _ in QuickLookPreview.shared.close() }
         .sheet(isPresented: $showingSmartFilters) {
             smartFilterSheet
                 // A sheet is a separate presentation context, so it needs the

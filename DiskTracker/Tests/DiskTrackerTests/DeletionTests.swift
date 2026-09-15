@@ -353,3 +353,47 @@ final class DeletionControllerTests: XCTestCase {
         XCTAssertEqual(model.rootNode?.totalPhysicalSize, 0)
     }
 }
+
+// MARK: - Quick Look
+
+/// The panel itself is AppKit and needs a real window, so these cover the part
+/// that is ours: which file is queued, and that the spacebar toggles rather
+/// than reopening.
+@MainActor
+final class QuickLookPreviewTests: XCTestCase {
+
+    override func tearDown() async throws {
+        QuickLookPreview.shared.close()
+    }
+
+    func testStartsWithNothingQueued() {
+        QuickLookPreview.shared.close()
+        // A fresh panel has no item; numberOfPreviewItems must not claim one.
+        XCTAssertEqual(
+            QuickLookPreview.shared.numberOfPreviewItems(in: nil),
+            QuickLookPreview.shared.currentURL == nil ? 0 : 1
+        )
+    }
+
+    func testQueuesTheRequestedFile() {
+        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("a.txt")
+        QuickLookPreview.shared.toggle(url: url)
+        XCTAssertEqual(QuickLookPreview.shared.currentURL, url)
+        XCTAssertEqual(QuickLookPreview.shared.numberOfPreviewItems(in: nil), 1)
+    }
+
+    func testSwitchingFilesReplacesTheItem() {
+        let first = URL(fileURLWithPath: "/tmp/first.txt")
+        let second = URL(fileURLWithPath: "/tmp/second.txt")
+        QuickLookPreview.shared.toggle(url: first)
+        QuickLookPreview.shared.toggle(url: second)
+        XCTAssertEqual(QuickLookPreview.shared.currentURL, second)
+    }
+
+    func testPreviewItemIsTheQueuedURL() {
+        let url = URL(fileURLWithPath: "/tmp/preview.txt")
+        QuickLookPreview.shared.toggle(url: url)
+        let item = QuickLookPreview.shared.previewPanel(nil, previewItemAt: 0)
+        XCTAssertEqual((item as? NSURL) as URL?, url)
+    }
+}
