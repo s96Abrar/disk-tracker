@@ -100,6 +100,18 @@ final class FreeSpaceMonitor: @unchecked Sendable {
 
     /// Accumulated history (last N snapshots) for trend analysis.
     private(set) var history: [FreeSpaceSnapshot] = []
+
+    /// Test seam for the trend estimate.
+    ///
+    /// `estimatedSecondsUntilFull` needs readings that differ, and real
+    /// readings only differ if the disk actually fills during the test. This
+    /// appends the same way `refresh` does, without the volume poll.
+    func appendSnapshotForTesting(_ snapshot: FreeSpaceSnapshot) {
+        history.append(snapshot)
+        if history.count > maxHistoryCount {
+            history.removeFirst(history.count - maxHistoryCount)
+        }
+    }
     private let maxHistoryCount = 60
 
     /// Last alert level to detect transitions (for one-shot notifications).

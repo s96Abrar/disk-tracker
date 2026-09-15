@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+#  check-coverage — Code coverage against the targets in 3_STANDARDS.md §3.
+#
+#  Usage:
+#    ./check-coverage           Report, and fail if a core file is under target
+#    ./check-coverage --report  Report every file, pass regardless
+#
+#  The >80% target applies to the scanner, the algorithms and the state
+#  machines — not to SwiftUI view bodies, which `3_STANDARDS.md` §3.1
+#  explicitly excludes from unit testing. A single whole-app percentage would
+#  average those in and measure nothing useful, so this checks the files the
+#  target actually names.
+#
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLE="$ROOT/.coverage.xcresult"
+TARGET=80.0
+
+BOLD='\033[1m'; RED='\033[31m'; GREEN='\033[32m'; YELLOW='\033[33m'; RESET='\033[0m'
+
+REPORT_ONLY=false
+[[ "${1:-}" == "--report" ]] && REPORT_ONLY=true
+
+# Files the >80% target applies to: traversal, decoding, file operations,
+# domain algorithms, persistence and the app state machine.
+CORE_FILES=(
+  "Core/Engine/ScanBuffer.swift"
+  "Core/Engine/DirectoryScannerBridge.swift"
+  "Core/Engine/AppModel.swift"
+  "Core/Engine/DiskVolume.swift"
+  "Core/Services/FileOperationsService.swift"
+  "Core/Services/SmartFilterService.swift"
+  "Core/Services/DuplicateFinderService.swift"
+  "Core/Services/ExportService.swift"
+  "Core/Services/ScanHistoryService.swift"
+  "Core/Services/FreeSpaceMonitor.swift"
+  "Core/Services/AppBundleAnalyzer.swift"
+)
+
+echo -e "${BOLD}Disk Tracker — coverage${RESET}"
+echo "Target: ${TARGET}% on core files (3_STANDARDS.md §3)"
+echo
+
+rm -rf "$BUNDLE"
+echo "Running tests with coverage…"
+xcodebuild test \
+  -project "$ROOT/DiskTracker/DiskTracker.xcodeproj" \
+  -scheme DiskTracker \
+  -destination 'platform=macOS' \
+  -enableCodeCoverage YES \
+  -resultBundlePath "$BUNDLE" > /dev/null 2>&1 || {
+    echo -e "${RED}Tests failed — coverage not measured.${RESET}" >&2
+    exit 1
+  }
+
+REPORT="$(xcrun xccov view --report --files-for-target DiskTracker.app "$BUNDLE" 2>/dev/null)"
+
+# xccov prints "<coverage>% <path>"-ish rows; pull path and percentage out.
+percent_for() {
+    grep -F "$1" <<<"$REPORT" | grep -oE '[0-9]+\.[0-9]+' | tail -1
+}
+
+printf "${BOLD}%-52s %8s${RESET}\n" "Core file" "Coverage"
+printf '%.0s─' {1..62}; echo
+
+failures=0
+for file in "${CORE_FILES[@]}"; do
+    pct="$(percent_for "$file" || true)"
+    name="$(basename "$file")"
+    if [[ -z "$pct" ]]; then
+        printf "%-52s %8s\n" "$name" "n/a"
+        continue
+    fi
+    if awk "BEGIN{exit !($pct >= $TARGET)}"; then
+        printf "%-52s ${GREEN}%7.2f%%${RESET}\n" "$name" "$pct"
+    else
+        printf "%-52s ${RED}%7.2f%%${RESET}\n" "$name" "$pct"
+        failures=$((failures + 1))
+    fi
+done
+
+echo
+OVERALL="$(xcrun xccov view --report --only-targets "$BUNDLE" 2>/dev/null \
+    | grep "DiskTracker.app" | grep -oE '[0-9]+\.[0-9]+%' | head -1)"
+echo "Whole app (includes SwiftUI view bodies, excluded from the target): ${OVERALL:-unknown}"
+
+if $REPORT_ONLY; then
+    echo
+    echo -e "${BOLD}Every file${RESET}"
+    xcrun xccov view --report --files-for-target DiskTracker.app "$BUNDLE" 2>/dev/null \
+      | grep "DiskTracker/Sources" || true
+    exit 0
+fi
+
+echo
+if [[ $failures -gt 0 ]]; then
+    echo -e "${YELLOW}$failures core file(s) below ${TARGET}%.${RESET}"
+    exit 1
+fi
+echo -e "${GREEN}All core files meet the ${TARGET}% target.${RESET}"

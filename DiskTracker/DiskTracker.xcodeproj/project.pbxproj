@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		096FEA52E28359A7D3D49705 /* SunburstViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */; };
+		AAD5C1D56B444C74B80975C1 /* CoverageGapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981F68BD405A4225B5AE48E7 /* CoverageGapTests.swift */; };
 		1E46D0126ED3454EA0049525 /* RenderBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29196528B96A418F846DB6B8 /* RenderBudgetTests.swift */; };
 		B35311BAAB074FBBBEDA6B2C /* DeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9791683A20724DA9A1BF5310 /* DeletionTests.swift */; };
 		CE8EF8A3472447A2A2F28E75 /* ScanBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49683D5AE36945A0837F4353 /* ScanBufferTests.swift */; };
@@ -46,6 +47,7 @@
 		9AD3602F668CF7CF907A401B /* DirectoryListViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryListViewTests.swift; sourceTree = "<group>"; };
 		9D07738E059F3D3A18363191 /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
 		A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunburstViewTests.swift; sourceTree = "<group>"; };
+		981F68BD405A4225B5AE48E7 /* CoverageGapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverageGapTests.swift; sourceTree = "<group>"; };
 		29196528B96A418F846DB6B8 /* RenderBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderBudgetTests.swift; sourceTree = "<group>"; };
 		9791683A20724DA9A1BF5310 /* DeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletionTests.swift; sourceTree = "<group>"; };
 		49683D5AE36945A0837F4353 /* ScanBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanBufferTests.swift; sourceTree = "<group>"; };
@@ -115,6 +117,7 @@
 				9D07738E059F3D3A18363191 /* PerformanceTests.swift */,
 				7B1C0D05617B5840C4E7AC9B /* SmartFilterServiceTests.swift */,
 				A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */,
+				981F68BD405A4225B5AE48E7 /* CoverageGapTests.swift */,
 				29196528B96A418F846DB6B8 /* RenderBudgetTests.swift */,
 				9791683A20724DA9A1BF5310 /* DeletionTests.swift */,
 				49683D5AE36945A0837F4353 /* ScanBufferTests.swift */,
@@ -238,6 +241,7 @@
 				F9E364CB6FDBF158E6118EF8 /* PerformanceTests.swift in Sources */,
 				BE68D409D5975D2DBE206259 /* SmartFilterServiceTests.swift in Sources */,
 				096FEA52E28359A7D3D49705 /* SunburstViewTests.swift in Sources */,
+				AAD5C1D56B444C74B80975C1 /* CoverageGapTests.swift in Sources */,
 				1E46D0126ED3454EA0049525 /* RenderBudgetTests.swift in Sources */,
 				B35311BAAB074FBBBEDA6B2C /* DeletionTests.swift in Sources */,
 				CE8EF8A3472447A2A2F28E75 /* ScanBufferTests.swift in Sources */,
