@@ -31,6 +31,8 @@ impl Default for ScanConfig {
 /// Per-scan mutable state shared across worker threads.
 pub struct ScanState {
     pub config: ScanConfig,
+    /// Absolute paths the user asked the scan to skip.
+    pub excluded: Vec<PathBuf>,
     pub cancelled: AtomicBool,
     pub progress: AtomicU64,
     pub results: Mutex<Vec<FileRecord>>,
@@ -40,8 +42,13 @@ pub struct ScanState {
 
 impl ScanState {
     pub fn new(config: ScanConfig) -> Self {
+        Self::with_exclusions(config, Vec::new())
+    }
+
+    pub fn with_exclusions(config: ScanConfig, excluded: Vec<PathBuf>) -> Self {
         ScanState {
             config,
+            excluded,
             cancelled: AtomicBool::new(false),
             progress: AtomicU64::new(0),
             results: Mutex::new(Vec::with_capacity(4096)),
@@ -71,7 +78,26 @@ pub fn scan_directory(
     config: ScanConfig,
     on_progress: impl Fn(u64) + Send + Sync + 'static,
 ) -> Result<ScanResult, ScanError> {
-    let state = Arc::new(ScanState::new(config));
+    scan_directory_excluding(root_path, config, Vec::new(), on_progress)
+}
+
+/// Scan `root_path`, skipping any directory under one of `excluded`.
+///
+/// Exclusions are matched on the resolved path, so a symlink into an excluded
+/// tree does not slip past. Matching is prefix-based at a path-component
+/// boundary: excluding `/tmp/build` skips `/tmp/build/x` but not
+/// `/tmp/build-output`.
+pub fn scan_directory_excluding(
+    root_path: &std::path::Path,
+    config: ScanConfig,
+    excluded: Vec<PathBuf>,
+    on_progress: impl Fn(u64) + Send + Sync + 'static,
+) -> Result<ScanResult, ScanError> {
+    let excluded: Vec<PathBuf> = excluded
+        .into_iter()
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .collect();
+    let state = Arc::new(ScanState::with_exclusions(config, excluded));
 
     // Add the root directory itself first, so it has a real node_id > 0.
     // All top-level items scanned under root will use this as their parent_id.
@@ -175,6 +201,9 @@ fn walk_dir_task<'sc>(
     if state.cancelled.load(Ordering::Relaxed) {
         return;
     }
+    if is_excluded(&path, &state.excluded) {
+        return;
+    }
 
     // Expensive I/O outside the lock: the getattrlistbulk batches.
     let entries = match directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
@@ -198,6 +227,12 @@ fn walk_dir_task<'sc>(
             state.config.max_depth == u32::MAX || (depth as u32) < state.config.max_depth;
 
         for entry in entries {
+            // Excluded directories are omitted outright rather than recorded
+            // with no contents. A folder listed at zero bytes reads as "empty",
+            // which is a different and wrong claim. `du --exclude` omits too.
+            if entry.is_dir && is_excluded(&path.join(&entry.name), &state.excluded) {
+                continue;
+            }
             let name_offset = append_to_string_table(&mut strings, &entry.name);
             let node_id = *next_id;
             *next_id += 1;
@@ -242,6 +277,19 @@ fn walk_dir_task<'sc>(
     }
 }
 
+/// True when `path` is an excluded directory or sits inside one.
+///
+/// Compares whole components so `/tmp/build` does not also exclude
+/// `/tmp/build-output`.
+fn is_excluded(path: &std::path::Path, excluded: &[PathBuf]) -> bool {
+    if excluded.is_empty() {
+        return false;
+    }
+    let resolved = path.canonicalize();
+    let candidate = resolved.as_deref().unwrap_or(path);
+    excluded.iter().any(|ex| candidate.starts_with(ex))
+}
+
 #[derive(Debug)]
 pub enum ScanError {
     Io(std::io::Error),
@@ -251,5 +299,129 @@ pub enum ScanError {
 impl From<std::io::Error> for ScanError {
     fn from(e: std::io::Error) -> Self {
         ScanError::Io(e)
+    }
+}
+
+#[cfg(test)]
+mod exclusion_tests {
+    use super::*;
+    use std::fs;
+
+    fn tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for sub in ["keep", "skip", "skip-not-really"] {
+            fs::create_dir_all(dir.path().join(sub)).unwrap();
+            fs::write(dir.path().join(sub).join("f.dat"), b"xxxx").unwrap();
+        }
+        fs::create_dir_all(dir.path().join("skip/nested")).unwrap();
+        fs::write(dir.path().join("skip/nested/deep.dat"), b"xxxx").unwrap();
+        dir
+    }
+
+    fn names(result: &ScanResult) -> Vec<String> {
+        result
+            .records
+            .iter()
+            .map(|r| {
+                let start = r.name_offset as usize;
+                let end = start + r.name_len as usize;
+                String::from_utf8_lossy(&result.string_table[start..end]).to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn scans_everything_when_nothing_is_excluded() {
+        let dir = tree();
+        let result =
+            scan_directory_excluding(dir.path(), ScanConfig::default(), vec![], |_| {}).unwrap();
+        let found = names(&result);
+        assert!(found.iter().any(|n| n == "keep"));
+        assert!(found.iter().any(|n| n == "skip"));
+        assert!(found.iter().any(|n| n == "deep.dat"));
+    }
+
+    #[test]
+    fn an_excluded_directory_is_omitted_entirely() {
+        let dir = tree();
+        let result = scan_directory_excluding(
+            dir.path(),
+            ScanConfig::default(),
+            vec![dir.path().join("skip")],
+            |_| {},
+        )
+        .unwrap();
+        let found = names(&result);
+
+        assert!(
+            !found.iter().any(|n| n == "skip"),
+            "an excluded folder recorded with no contents reads as empty, \
+             which is a different claim"
+        );
+    }
+
+    #[test]
+    fn skips_an_excluded_directory_and_its_contents() {
+        let dir = tree();
+        let result = scan_directory_excluding(
+            dir.path(),
+            ScanConfig::default(),
+            vec![dir.path().join("skip")],
+            |_| {},
+        )
+        .unwrap();
+        let found = names(&result);
+
+        assert!(found.iter().any(|n| n == "keep"), "unrelated dirs survive");
+        assert!(
+            !found.iter().any(|n| n == "deep.dat"),
+            "contents of an excluded directory must not be scanned"
+        );
+    }
+
+    /// Prefix matching on raw strings would also exclude `skip-not-really`.
+    #[test]
+    fn matches_whole_path_components() {
+        let dir = tree();
+        let result = scan_directory_excluding(
+            dir.path(),
+            ScanConfig::default(),
+            vec![dir.path().join("skip")],
+            |_| {},
+        )
+        .unwrap();
+        let found = names(&result);
+
+        assert!(
+            found.iter().any(|n| n == "skip-not-really"),
+            "excluding /skip must not also exclude /skip-not-really"
+        );
+    }
+
+    #[test]
+    fn a_nonexistent_exclusion_is_harmless() {
+        let dir = tree();
+        let result = scan_directory_excluding(
+            dir.path(),
+            ScanConfig::default(),
+            vec![dir.path().join("no-such-folder")],
+            |_| {},
+        )
+        .unwrap();
+        assert!(names(&result).iter().any(|n| n == "keep"));
+    }
+
+    #[test]
+    fn excluding_the_root_yields_only_the_root_record() {
+        let dir = tree();
+        let result = scan_directory_excluding(
+            dir.path(),
+            ScanConfig::default(),
+            vec![dir.path().to_path_buf()],
+            |_| {},
+        )
+        .unwrap();
+        // The root record is seeded before the walk; nothing below it is read.
+        assert_eq!(result.records.len(), 1);
     }
 }

@@ -1,6 +1,7 @@
 //! Rust CLI binary for Disk Tracker.
 //!
-//! Usage: `disk-tracker-engine scan <path> [--format=binary|json] [--exclude-hidden]`
+//! Usage: `disk-tracker-engine scan <path> [--format=binary|json]
+//!        [--exclude-hidden] [--exclude <path>]...`
 //!
 //! The app spawns this and reads the scan result from stdout. `binary` is the
 //! product path (see `wire.rs`); `json` exists so a scan can be inspected by
@@ -9,7 +10,7 @@
 //! Progress goes to stderr as `progress <count>` lines, one per sample, so
 //! stdout stays a single clean payload.
 
-use disk_tracker_engine::scanner::{scan_directory, ScanConfig};
+use disk_tracker_engine::scanner::{scan_directory_excluding, ScanConfig};
 use disk_tracker_engine::wire;
 use std::env;
 use std::io::Write;
@@ -20,7 +21,8 @@ fn main() {
 
     if args.len() < 3 || args[1] != "scan" {
         eprintln!(
-            "Usage: disk-tracker-engine scan <path> [--format=binary|json] [--exclude-hidden]"
+            "Usage: disk-tracker-engine scan <path> [--format=binary|json] \
+             [--exclude-hidden] [--exclude <path>]..."
         );
         process::exit(1);
     }
@@ -33,15 +35,31 @@ fn main() {
         ..ScanConfig::default()
     };
 
-    let result = match scan_directory(std::path::Path::new(path), config, |scanned| {
-        eprintln!("progress {}", scanned);
-    }) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Scan error: {:?}", e);
-            process::exit(1);
+    // `--exclude <path>`, repeatable. A trailing `--exclude` with no value is
+    // ignored rather than treated as an empty path, which would match nothing
+    // useful and confuse the caller.
+    let mut excluded: Vec<std::path::PathBuf> = Vec::new();
+    let mut i = 3;
+    while i < args.len() {
+        if args[i] == "--exclude" {
+            if let Some(value) = args.get(i + 1) {
+                excluded.push(std::path::PathBuf::from(value));
+                i += 1;
+            }
         }
-    };
+        i += 1;
+    }
+
+    let result =
+        match scan_directory_excluding(std::path::Path::new(path), config, excluded, |scanned| {
+            eprintln!("progress {}", scanned);
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Scan error: {:?}", e);
+                process::exit(1);
+            }
+        };
 
     if json_mode {
         print_json(&result);

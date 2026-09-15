@@ -23,6 +23,9 @@ struct ScanConfig {
     var excludeHiddenFiles: Bool = false
     var followSymlinks: Bool = false
     var maxDepth: UInt32 = .max
+    /// Absolute paths the user asked to skip. Passed to the engine as
+    /// repeated `--exclude` arguments.
+    var excludedPaths: [String] = []
 }
 
 /// Byte sink for draining a pipe from another thread.
@@ -79,6 +82,9 @@ final class DirectoryScannerBridge: @unchecked Sendable {
 
         var args = ["scan", path]
         if config.excludeHiddenFiles { args.append("--exclude-hidden") }
+        for excluded in config.excludedPaths {
+            args.append(contentsOf: ["--exclude", excluded])
+        }
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()

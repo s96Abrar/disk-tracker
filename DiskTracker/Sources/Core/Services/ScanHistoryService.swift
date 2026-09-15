@@ -20,7 +20,10 @@ struct ScanHistoryEntry: Identifiable, Codable, Sendable {
     /// `ScanHistoryService.treeDirectory`, so the dashboard can re-open a past
     /// scan without re-walking the filesystem. Optional: entries written before
     /// this field, and scans whose tree failed to persist, simply have no tree.
-    let treeFile: String?
+    /// Cleared when the tree is pruned to stay inside the disk budget. The
+    /// entry survives — its stats are still worth showing — but it can no
+    /// longer be re-opened without re-scanning.
+    var treeFile: String?
 
     init(scanDate: Date, volumePath: String, totalFiles: Int, totalSize: UInt64, duration: TimeInterval, treeFile: String? = nil) {
         self.id = UUID()
@@ -42,7 +45,20 @@ struct ScanHistoryEntry: Identifiable, Codable, Sendable {
 @Observable
 final class ScanHistoryService: @unchecked Sendable {
 
-    static let maxHistoryCount = 5
+    /// How many scans are listed. Entries are metadata only — a few hundred
+    /// bytes each — so this is generous. The trees they point at are what
+    /// costs, and those are capped separately by `treeDiskBudget`.
+    static let maxHistoryCount = 20
+
+    /// Ceiling on the serialized trees kept for re-opening.
+    ///
+    /// Measured at ~294 bytes per node, so a scan of a million files writes
+    /// about 294MB. Capping by entry count instead would let twenty large
+    /// scans hoard several gigabytes — in a tool whose whole purpose is
+    /// reclaiming disk space. Oldest trees are dropped first; their entries
+    /// stay, and simply lose the ability to restore.
+    static let treeDiskBudget: UInt64 = 500 * 1024 * 1024
+
     private static let storageKey = "DiskTracker.ScanHistory"
 
     private(set) var entries: [ScanHistoryEntry] = []
@@ -71,6 +87,7 @@ final class ScanHistoryService: @unchecked Sendable {
             entries = Array(entries.prefix(Self.maxHistoryCount))
         }
 
+        pruneTreesToBudget()
         save()
     }
 
@@ -111,6 +128,46 @@ final class ScanHistoryService: @unchecked Sendable {
     func loadTree(for entry: ScanHistoryEntry) -> Data? {
         guard let name = entry.treeFile else { return nil }
         return try? Data(contentsOf: Self.treeDirectory.appendingPathComponent(name))
+    }
+
+    /// Drops the oldest trees until the rest fit inside `treeDiskBudget`.
+    ///
+    /// Newest first, so the scan a user is most likely to re-open is the last
+    /// one to go. A tree larger than the whole budget is kept if it is the
+    /// newest — otherwise the most recent scan could never be restored.
+    func pruneTreesToBudget() {
+        var running: UInt64 = 0
+        var changed = false
+
+        for index in entries.indices {
+            guard let name = entries[index].treeFile else { continue }
+            let size = treeSize(name)
+
+            // Always keep the newest, whatever it costs.
+            if index == 0 {
+                running += size
+                continue
+            }
+            if running + size <= Self.treeDiskBudget {
+                running += size
+            } else {
+                deleteTree(for: entries[index])
+                entries[index].treeFile = nil
+                changed = true
+            }
+        }
+        if changed { save() }
+    }
+
+    private func treeSize(_ name: String) -> UInt64 {
+        let url = Self.treeDirectory.appendingPathComponent(name)
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+        return UInt64(values?.fileSize ?? 0)
+    }
+
+    /// Total bytes the saved trees occupy. Surfaced so Settings can show it.
+    var treeDiskUsage: UInt64 {
+        entries.compactMap(\.treeFile).reduce(0) { $0 + treeSize($1) }
     }
 
     private func deleteTree(for entry: ScanHistoryEntry) {

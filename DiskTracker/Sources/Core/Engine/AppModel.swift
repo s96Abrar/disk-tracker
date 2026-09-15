@@ -598,7 +598,9 @@ final class AppModel: @unchecked Sendable {
         let generation = scanGeneration
         let startTime = Date()
         // Read on the main thread; the scan closure must not touch model state.
-        let scanConfig = ScanConfig(excludeHiddenFiles: !showHiddenFiles)
+        let scanConfig = ScanConfig(
+            excludeHiddenFiles: !showHiddenFiles,
+            excludedPaths: ExclusionSettings.paths)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }

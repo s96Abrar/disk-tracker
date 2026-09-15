@@ -478,3 +478,117 @@ final class LowSpaceAlertTests: XCTestCase {
         XCTAssertEqual(LowSpaceSettings.thresholdPercent, 20)
     }
 }
+
+// MARK: - Exclusions
+
+/// `ScanConfig.excludeSystemPaths` covered the system tree; the user-defined
+/// half had no storage and no UI at all.
+final class ExclusionSettingsTests: XCTestCase {
+
+    private let key = "com.disktracker.excludedPaths"
+    private var saved: [String] = []
+
+    override func setUp() {
+        saved = ExclusionSettings.paths
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    override func tearDown() {
+        ExclusionSettings.paths = saved
+    }
+
+    func testStartsEmpty() {
+        XCTAssertTrue(ExclusionSettings.paths.isEmpty)
+    }
+
+    func testAddsAndPersists() {
+        ExclusionSettings.add("/Users/me/Backups")
+        XCTAssertEqual(ExclusionSettings.paths, ["/Users/me/Backups"])
+    }
+
+    /// The folder picker happily returns the same folder twice.
+    func testAddingTwiceKeepsOneEntry() {
+        ExclusionSettings.add("/Users/me/Backups")
+        ExclusionSettings.add("/Users/me/Backups")
+        XCTAssertEqual(ExclusionSettings.paths.count, 1)
+    }
+
+    func testRemoves() {
+        ExclusionSettings.add("/a")
+        ExclusionSettings.add("/b")
+        ExclusionSettings.remove("/a")
+        XCTAssertEqual(ExclusionSettings.paths, ["/b"])
+    }
+
+    /// An empty path would exclude nothing while still taking up a row.
+    func testDropsEmptyPaths() {
+        ExclusionSettings.paths = ["", "/real", "  "]
+        XCTAssertFalse(ExclusionSettings.paths.contains(""))
+        XCTAssertTrue(ExclusionSettings.paths.contains("/real"))
+    }
+
+    func testOrderIsStable() {
+        ExclusionSettings.paths = ["/z", "/a", "/m"]
+        XCTAssertEqual(ExclusionSettings.paths, ["/a", "/m", "/z"],
+                       "a set needs an explicit order or the list jumps around")
+    }
+
+    /// The exclusions must actually reach the engine's argument list.
+    func testConfigCarriesExclusionsToTheEngine() {
+        let config = ScanConfig(excludedPaths: ["/tmp/skip", "/tmp/other"])
+        XCTAssertEqual(config.excludedPaths.count, 2)
+    }
+}
+
+// MARK: - Scan history budget
+
+/// A scan tree costs ~294 bytes per node, so a million-file scan writes about
+/// 294MB. Capping by entry count alone would let a handful of large scans
+/// hoard gigabytes — inside a tool for reclaiming disk space.
+final class ScanHistoryBudgetTests: XCTestCase {
+
+    // `ScanHistoryService()` loads persisted entries, so these isolate from
+    // whatever real history the machine running the tests happens to have.
+    private let storageKey = "DiskTracker.ScanHistory"
+    private var saved: Any?
+
+    override func setUp() {
+        saved = UserDefaults.standard.object(forKey: storageKey)
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
+
+    override func tearDown() {
+        if let saved {
+            UserDefaults.standard.set(saved, forKey: storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: storageKey)
+        }
+    }
+
+    func testCountCapIsGenerousBecauseEntriesAreCheap() {
+        XCTAssertGreaterThanOrEqual(ScanHistoryService.maxHistoryCount, 10)
+    }
+
+    func testTreesAreCappedByBytesNotCount() {
+        // The guard against the old design: 20 entries x ~294MB would be ~6GB.
+        let worstCase = UInt64(ScanHistoryService.maxHistoryCount) * 294 * 1_024 * 1_024
+        XCTAssertLessThan(ScanHistoryService.treeDiskBudget, worstCase,
+                          "a byte budget is the point; a count cap cannot bound this")
+    }
+
+    func testBudgetLeavesRoomForAtLeastOneLargeScan() {
+        // A ~294MB tree from a million-file scan must still be restorable.
+        XCTAssertGreaterThan(ScanHistoryService.treeDiskBudget, 294 * 1_024 * 1_024)
+    }
+
+    func testUsageIsZeroWithNoHistory() {
+        XCTAssertEqual(ScanHistoryService().treeDiskUsage, 0)
+    }
+
+    /// Pruning with nothing recorded must not throw or wipe state.
+    func testPruningEmptyHistoryIsSafe() {
+        let service = ScanHistoryService()
+        service.pruneTreesToBudget()
+        XCTAssertEqual(service.treeDiskUsage, 0)
+    }
+}

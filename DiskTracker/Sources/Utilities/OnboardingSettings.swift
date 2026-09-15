@@ -61,3 +61,33 @@ enum LowSpaceSettings {
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 }
+
+// MARK: - Exclusions
+
+/// Folders the user has asked every scan to skip.
+///
+/// `ScanConfig.excludeSystemPaths` already covers the system tree; this is the
+/// user-defined half, which had no storage and no UI. Typical use is a backup
+/// folder or a network mount that would otherwise dominate every scan.
+enum ExclusionSettings {
+    private static let key = "com.disktracker.excludedPaths"
+
+    static var paths: [String] {
+        get { UserDefaults.standard.stringArray(forKey: key) ?? [] }
+        set {
+            // Deduplicate and drop empties: the picker can return the same
+            // folder twice, and an empty path would exclude nothing while
+            // still occupying a row.
+            let cleaned = Array(Set(newValue.filter { !$0.isEmpty })).sorted()
+            UserDefaults.standard.set(cleaned, forKey: key)
+        }
+    }
+
+    static func add(_ path: String) {
+        paths = paths + [path]
+    }
+
+    static func remove(_ path: String) {
+        paths = paths.filter { $0 != path }
+    }
+}
