@@ -430,12 +430,85 @@ final class AppModel: @unchecked Sendable {
         }
     }
 
-    /// Phase 5: Export current tree as JSON/CSV. Returns nil on failure.
+    /// Serialize the current tree. Returns nil when there is no scan.
+    ///
+    /// O(tree) and allocates the whole document as a string — for a million
+    /// files that is hundreds of megabytes, so callers run it off the main
+    /// thread. `writeExport` is the one that does.
     func exportTree(format: ExportFormat) -> String? {
         guard let root = rootNode else { return nil }
         switch format {
         case .json: return ExportService.exportJSON(root: root)
         case .csv:  return ExportService.exportCSV(root: root)
+        }
+    }
+
+    /// True while an export is being written. Disables the menu item so a
+    /// second export cannot start on top of the first.
+    var isExporting: Bool = false
+
+    /// A default file name for the export, derived from what was scanned.
+    ///
+    /// Scanning a volume root is ordinary, and `URL(fileURLWithPath: "/")`
+    /// reports "/" as its last component — which would put a path separator in
+    /// the middle of a file name. Anything that is not a usable name falls back
+    /// to "scan".
+    func exportFileName(format: ExportFormat) -> String {
+        let last = URL(fileURLWithPath: currentScanPath).lastPathComponent
+        let cleaned = last.replacingOccurrences(of: "/", with: "")
+            .replacingOccurrences(of: ":", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        let base = cleaned.isEmpty ? "scan" : cleaned
+        let stamp = Self.exportDateFormatter.string(from: Date())
+        return "\(base)-\(stamp).\(format.fileExtension)"
+    }
+
+    @ObservationIgnored
+    private static let exportDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd-HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// Serializes the tree and writes it to `url`, off the main thread.
+    ///
+    /// `completion` runs on the main thread with the error, or nil on success.
+    func writeExport(format: ExportFormat, to url: URL, completion: @escaping @Sendable (Error?) -> Void) {
+        guard rootNode != nil else {
+            completion(ExportError.noScan)
+            return
+        }
+        isExporting = true
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let document = self.exportTree(format: format)
+
+            var failure: Error?
+            if let document {
+                do {
+                    try document.write(to: url, atomically: true, encoding: .utf8)
+                } catch {
+                    failure = error
+                }
+            } else {
+                failure = ExportError.noScan
+            }
+
+            DispatchQueue.main.async {
+                self.isExporting = false
+                completion(failure)
+            }
+        }
+    }
+
+    enum ExportError: LocalizedError {
+        case noScan
+        var errorDescription: String? {
+            switch self {
+            case .noScan: return "There is no scan to export."
+            }
         }
     }
 

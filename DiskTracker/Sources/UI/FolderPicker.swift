@@ -2,9 +2,11 @@
 //  FolderPicker.swift
 //  DiskTracker
 //
-//  One directory-chooser panel. The Dashboard hero, the Scan Results
-//  toolbar/empty state, and the onboarding "Start Scan" button each had their
-//  own byte-identical copy of this NSOpenPanel setup.
+//  The app's AppKit file panels.
+//
+//  The directory chooser is here because the Dashboard hero, the Scan Results
+//  toolbar and empty state, and the onboarding "Start Scan" button each had
+//  their own byte-identical copy of the same NSOpenPanel setup.
 //
 
 import AppKit
@@ -27,5 +29,20 @@ enum FolderPicker {
         // a restart without one.
         ScopedAccess.remember(url)
         return url
+    }
+
+    /// Prompts for where to write an export. Returns nil when the user cancels.
+    ///
+    /// Inside the sandbox the returned URL carries its own write grant for this
+    /// launch, which is all an export needs — unlike a scan folder, there is
+    /// nothing to re-open later, so no bookmark is kept.
+    static func chooseExportDestination(defaultName: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = defaultName
+        panel.canCreateDirectories = true
+        panel.title = "Export Scan"
+        panel.message = "Choose where to save the scan report"
+        panel.prompt = "Export"
+        return panel.runModal() == .OK ? panel.url : nil
     }
 }

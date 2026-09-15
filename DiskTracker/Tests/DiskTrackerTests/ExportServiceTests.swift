@@ -147,3 +147,124 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertNoThrow(try JSONSerialization.jsonObject(with: data))
     }
 }
+
+// MARK: - Reaching the export
+
+/// `ExportService` and `AppModel.exportTree` were fully built and tested with
+/// zero callers — nothing in the UI could reach them. These cover the path the
+/// File menu now takes.
+final class ExportWritingTests: XCTestCase {
+
+    /// `writeExport`'s completion is `@Sendable`, so a plain captured `var`
+    /// cannot be assigned from it. This carries the result across instead.
+    private final class ErrorBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Error?
+        func set(_ error: Error?) { lock.lock(); value = error; lock.unlock() }
+        var error: Error? { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
+    private func makeModel() -> AppModel {
+        let file = DiskNode(recordIndex: 0, name: "report.pdf", path: "/scan/report.pdf",
+                            logicalSize: 2048, physicalSize: 4096, fileKind: .document,
+                            isSystemProtected: false, modTimeSecs: 1_700_000_000,
+                            depth: 1, childCount: 0, children: [], totalPhysicalSize: 4096)
+        let root = DiskNode(recordIndex: 0, name: "scan", path: "/scan",
+                            logicalSize: 0, physicalSize: 0, fileKind: .directory,
+                            isSystemProtected: false, modTimeSecs: 0, depth: 0,
+                            childCount: 1, children: [file], totalPhysicalSize: 4096)
+        let model = AppModel()
+        model.rootNode = root
+        model.currentScanPath = "/scan"
+        return model
+    }
+
+    private func tempURL(_ ext: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("export-\(UUID().uuidString).\(ext)")
+    }
+
+    func testWritesJSONToDisk() throws {
+        let model = makeModel()
+        let url = tempURL("json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let done = expectation(description: "export finished")
+        let box = ErrorBox()
+        model.writeExport(format: .json, to: url) { box.set($0); done.fulfill() }
+        wait(for: [done], timeout: 10)
+
+        XCTAssertNil(box.error)
+        let written = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(written.contains("report.pdf"))
+        XCTAssertTrue(written.contains("\"physicalSize\" : 4096"))
+    }
+
+    func testWritesCSVToDisk() throws {
+        let model = makeModel()
+        let url = tempURL("csv")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let done = expectation(description: "export finished")
+        model.writeExport(format: .csv, to: url) { _ in done.fulfill() }
+        wait(for: [done], timeout: 10)
+
+        let written = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(written.hasPrefix("Path,Name,PhysicalSize"))
+        XCTAssertTrue(written.contains("/scan/report.pdf"))
+    }
+
+    func testReportsAnUnwritableDestination() {
+        let model = makeModel()
+        // A directory that does not exist and cannot be created implicitly.
+        let url = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/out.json")
+
+        let done = expectation(description: "export finished")
+        let box = ErrorBox()
+        model.writeExport(format: .json, to: url) { box.set($0); done.fulfill() }
+        wait(for: [done], timeout: 10)
+
+        XCTAssertNotNil(box.error, "a failed write must be reported, not swallowed")
+    }
+
+    func testRefusesWhenThereIsNoScan() {
+        let model = AppModel()
+        let done = expectation(description: "export finished")
+        let box = ErrorBox()
+        model.writeExport(format: .json, to: tempURL("json")) { box.set($0); done.fulfill() }
+        wait(for: [done], timeout: 5)
+
+        XCTAssertNotNil(box.error)
+        XCTAssertFalse(model.isExporting)
+    }
+
+    /// The menu item is gated on this, so a second export cannot start on top
+    /// of the first.
+    func testExportingFlagClearsAfterwards() {
+        let model = makeModel()
+        let url = tempURL("json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let done = expectation(description: "export finished")
+        model.writeExport(format: .json, to: url) { _ in done.fulfill() }
+        wait(for: [done], timeout: 10)
+
+        XCTAssertFalse(model.isExporting)
+    }
+
+    func testFileNameCarriesTheScannedFolderAndFormat() {
+        let model = makeModel()
+        let json = model.exportFileName(format: .json)
+        XCTAssertTrue(json.hasPrefix("scan-"), "got \(json)")
+        XCTAssertTrue(json.hasSuffix(".json"), "got \(json)")
+
+        XCTAssertTrue(model.exportFileName(format: .csv).hasSuffix(".csv"))
+    }
+
+    func testFileNameFallsBackWhenThePathHasNoLastComponent() {
+        let model = makeModel()
+        model.currentScanPath = "/"
+        let name = model.exportFileName(format: .json)
+        XCTAssertTrue(name.hasPrefix("scan-"), "got \(name)")
+    }
+}

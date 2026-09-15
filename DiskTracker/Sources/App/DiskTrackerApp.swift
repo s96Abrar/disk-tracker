@@ -32,10 +32,60 @@ struct DiskTrackerApp: App {
                 .frame(minWidth: 1100, minHeight: 720)
         }
         .windowResizability(.contentSize)
+        .commands { scanCommands }
 
         Settings {
             SettingsView()
                 .environment(appModel)
+        }
+    }
+
+    // MARK: - Menu commands
+
+    /// File menu entries. `ExportService` and `AppModel.exportTree` were fully
+    /// built and had no callers at all — nothing in the UI could reach them.
+    @CommandsBuilder
+    private var scanCommands: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("Open Folder to Scan…") {
+                presentFolderPickerAndStartScan()
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            .disabled(!appModel.canStartNewScan)
+
+            Divider()
+
+            Button("Export as JSON…") { export(.json) }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(!canExport)
+
+            Button("Export as CSV…") { export(.csv) }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(!canExport)
+        }
+    }
+
+    private var canExport: Bool {
+        appModel.rootNode != nil && !appModel.isExporting
+    }
+
+    /// Prompts for a destination, then writes off the main thread.
+    ///
+    /// Serializing a million-node tree produces a document hundreds of
+    /// megabytes long; doing that inline would freeze the window mid-menu.
+    private func export(_ format: AppModel.ExportFormat) {
+        guard let url = FolderPicker.chooseExportDestination(
+            defaultName: appModel.exportFileName(format: format)) else { return }
+
+        appModel.writeExport(format: format, to: url) { error in
+            guard let error else { return }
+            // NSAlert rather than SwiftUI state: a menu command has no view to
+            // hang a presentation modifier on.
+            let alert = NSAlert()
+            alert.messageText = "Couldn't export the scan"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 
