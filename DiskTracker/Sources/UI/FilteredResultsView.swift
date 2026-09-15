@@ -87,6 +87,7 @@ struct FilteredResultsView: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture { model.selectNode(node) }
+        .nodeActions(node, model: model)
     }
 
     private var emptyState: some View {

@@ -31,6 +31,11 @@ struct ScanResultsView: View {
     /// Smart filter results are shown in a sheet over the visualization.
     @State private var showingSmartFilters = false
 
+    /// Owns the delete confirmation for everything on this screen. Put in the
+    /// environment so a context menu inside a List row can reach it without
+    /// every view in between carrying a closure.
+    @State private var deletion = DeletionController()
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -43,11 +48,21 @@ struct ScanResultsView: View {
                 }
             }
 
+            if model.isBatchMode {
+                BatchActionBar(model: model)
+            }
+
             StatusBar(model: model)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(deletion)
+        .deletionConfirmation(deletion, model: model)
         .sheet(isPresented: $showingSmartFilters) {
             smartFilterSheet
+                // A sheet is a separate presentation context, so it needs the
+                // controller and the dialog attached again.
+                .environment(deletion)
+                .deletionConfirmation(deletion, model: model)
         }
     }
 
@@ -71,9 +86,6 @@ struct ScanResultsView: View {
 
             Divider()
 
-            // Delete is intentionally not wired here: file removal routes
-            // through FileOperationsService with its own confirmation flow,
-            // which this migration has not re-established yet.
             SmartFilterResultsView(model: model)
         }
         .frame(width: 720, height: 480)
@@ -135,6 +147,21 @@ struct ScanResultsView: View {
             .fixedSize()
             .disabled(model.rootNode == nil)
             .help("Find large, old, empty, duplicate or bundled items")
+
+            // Batch mode — turns row taps into multi-selection for the
+            // BatchActionBar. Off by default so a tap still means "inspect".
+            Button {
+                model.isBatchMode.toggle()
+                if !model.isBatchMode { model.clearBatchSelection() }
+            } label: {
+                Label("Select", systemImage: model.isBatchMode
+                      ? "checkmark.circle.fill" : "checkmark.circle")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.bordered)
+            .tint(model.isBatchMode ? Color.brandAccent : nil)
+            .disabled(model.rootNode == nil)
+            .help(model.isBatchMode ? "Leave selection mode" : "Select multiple items to delete")
 
             // Re-scan — disabled while a scan is running.
             Button {

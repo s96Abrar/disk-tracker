@@ -81,6 +81,14 @@ struct DirectoryRowView: View {
     var model: AppModel
     @State private var isExpanded = false
 
+    /// In batch mode the tick reflects multi-selection; otherwise it tracks the
+    /// single inspected node.
+    private var isSelected: Bool {
+        model.isBatchMode
+            ? model.selectedNodes.contains(node.id)
+            : model.selectedNode?.id == node.id
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             if node.depth > 0 {
@@ -101,11 +109,16 @@ struct DirectoryRowView: View {
                 Spacer()
                     .frame(width: 16)
             }
+            if model.isBatchMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(isSelected ? Color.brandAccent : .secondary)
+            }
             Circle()
-                .fill(colorForKind(node.fileKind))
+                .fill(Color.forFileKind(node.fileKind))
                 .frame(width: 20, height: 20)
                 .overlay(
-                    Image(systemName: iconForKind(node.fileKind))
+                    Image(systemName: node.fileKind.iconName)
                         .font(.system(size: 10))
                         .foregroundStyle(.white)
                 )
@@ -132,10 +145,12 @@ struct DirectoryRowView: View {
                 .frame(width: 110, alignment: .trailing)
         }
         .padding(.vertical, 4)
+        .background(isSelected ? Color.brandAccent.opacity(0.18) : .clear)
         .contentShape(Rectangle())
         .onTapGesture {
             model.selectNode(node)
         }
+        .nodeActions(node, model: model)
         if isExpanded, let children = node.children {
             ForEach(children) { child in
                 DirectoryRowView(node: child, model: model)
@@ -155,29 +170,5 @@ struct DirectoryRowView: View {
         return children.count + children.reduce(0) { $0 + childCount(of: $1) }
     }
 
-    private func colorForKind(_ kind: FileKind) -> Color {
-        switch kind {
-        case .image: return Color(hex: "FF6B6B")
-        case .video: return Color(hex: "9B59B6")
-        case .audio: return Color(hex: "F39C12")
-        case .document: return Color(hex: "3498DB")
-        case .archive: return Color(hex: "27AE60")
-        case .application: return Color(hex: "E74C3C")
-        case .directory: return Color(hex: "2C3E50")
-        case .other: return Color(hex: "95A5A6")
-        }
-    }
 
-    private func iconForKind(_ kind: FileKind) -> String {
-        switch kind {
-        case .image: return "photo"
-        case .video: return "film"
-        case .audio: return "music.note"
-        case .document: return "doc"
-        case .archive: return "doc.zipper"
-        case .application: return "app"
-        case .directory: return "folder"
-        case .other: return "doc.questionmark"
-        }
-    }
 }

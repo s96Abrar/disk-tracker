@@ -75,10 +75,13 @@ final class FileOperationsService: @unchecked Sendable {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    // MARK: - Quick Look
+    // MARK: - Open
 
-    /// Preview a file using Quick Look.
-    func previewWithQuickLook(url: URL) {
+    /// Hand the file to its default application.
+    ///
+    /// This was called `previewWithQuickLook`, which it never was — opening a
+    /// 2GB video in an editor is not a preview. Quick Look proper is P0-6.
+    func openInDefaultApp(url: URL) {
         NSWorkspace.shared.open(url)
     }
 

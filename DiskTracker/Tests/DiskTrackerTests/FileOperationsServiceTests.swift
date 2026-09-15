@@ -97,9 +97,9 @@ final class FileOperationsServiceTests: XCTestCase {
         service.showInFinder(url: url)
     }
 
-    func testPreviewWithQuickLookDoesNotThrow() {
+    func testOpenInDefaultAppDoesNotThrow() {
         let service = FileOperationsService.shared
         let url = URL(fileURLWithPath: NSHomeDirectory())
-        service.previewWithQuickLook(url: url)
+        service.openInDefaultApp(url: url)
     }
 }

@@ -22,17 +22,26 @@ struct TreemapView: View {
         .other: Color(hex: "95A5A6"),
     ]
 
+    /// Index of the tile under the cursor. Also tells the context menu which
+    /// node was right-clicked — a Canvas has no per-tile view to attach one to.
+    @State private var hoveredIndex: Int?
+
     var body: some View {
         GeometryReader { geometry in
             let layout = calculateSquarifiedLayout(in: geometry.size)
 
             Canvas { context, _ in
-                for item in layout {
-                    let rect = CGRect(x: item.x, y: item.y, width: item.width, height: item.height)
+                for (index, item) in layout.enumerated() {
+                    let rect = item.frame
                     let path = Path(roundedRect: rect, cornerRadius: 4)
-                    
-                    context.fill(path, with: .color(item.color.opacity(0.85)))
-                    context.stroke(path, with: .color(.white.opacity(0.4)), lineWidth: 1)
+
+                    let isHovered = hoveredIndex == index
+                    context.fill(path, with: .color(item.color.opacity(isHovered ? 1.0 : 0.85)))
+                    context.stroke(
+                        path,
+                        with: .color(.white.opacity(isHovered ? 0.9 : 0.4)),
+                        lineWidth: isHovered ? 2 : 1
+                    )
 
                     // Draw the label *inside* the rect: clipped so it can never
                     // bleed into a neighbouring tile, and laid out in the tile's
@@ -54,6 +63,31 @@ struct TreemapView: View {
                 }
             }
             .background(Color(nsColor: .textBackgroundColor))
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    // Only write on a real change: every mouse-move pixel would
+                    // otherwise invalidate the body and redraw every tile.
+                    let hit = layout.firstIndex { $0.frame.contains(location) }
+                    if hit != hoveredIndex { hoveredIndex = hit }
+                case .ended:
+                    if hoveredIndex != nil { hoveredIndex = nil }
+                }
+            }
+            .gesture(
+                SpatialTapGesture().onEnded { event in
+                    guard let hit = layout.first(where: { $0.frame.contains(event.location) }),
+                          let node = hit.node else { return }
+                    model.selectNode(node)
+                }
+            )
+            .nodeActions(model: model) {
+                hoveredIndex.flatMap { layout.indices.contains($0) ? layout[$0].node : nil }
+            }
+            .onChange(of: model.rootNode) { _, _ in
+                hoveredIndex = nil
+            }
         }
     }
 
@@ -101,7 +135,7 @@ struct TreemapView: View {
                     rect = CGRect(x: bounds.minX, y: bounds.minY + offset, width: rowThickness, height: itemSize)
                     offset += itemSize
                 }
-                rects.append(TreemapRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height, label: item.label, color: item.color))
+                rects.append(TreemapRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height, label: item.label, color: item.color, node: item.node))
             }
 
             if isHorizontal {
@@ -126,12 +160,12 @@ struct TreemapView: View {
         // Including it as a sibling of its own children double-counted the tree
         // and left a stray zero-area tile.
         guard let children = root.children, !children.isEmpty else {
-            return [TreemapItem(label: root.name, value: weight(root), color: colors[root.fileKind] ?? .gray)]
+            return [TreemapItem(label: root.name, value: weight(root), color: colors[root.fileKind] ?? .gray, node: root)]
         }
 
         return children
             .filter { weight($0) > 0 }
-            .map { TreemapItem(label: $0.name, value: weight($0), color: colors[$0.fileKind] ?? .gray) }
+            .map { TreemapItem(label: $0.name, value: weight($0), color: colors[$0.fileKind] ?? .gray, node: $0) }
     }
 }
 
@@ -139,6 +173,9 @@ struct TreemapItem {
     let label: String
     let value: Double
     let color: Color
+    /// The node this tile stands for, so a click has something to act on.
+    /// Layout used to carry only a label, which made every tile inert.
+    var node: DiskNode?
 }
 
 struct TreemapRect {
@@ -148,5 +185,8 @@ struct TreemapRect {
     let height: CGFloat
     let label: String
     let color: Color
+    var node: DiskNode?
+
+    var frame: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 

@@ -649,7 +649,26 @@ final class AppModel: @unchecked Sendable {
         node.children?.forEach { collectSelectedPaths(from: $0, into: &paths) }
     }
 
-    /// Total size of all selected nodes.
+    /// The selected nodes themselves, for the batch bar's size and kind checks.
+    ///
+    /// A selected folder's descendants are not included: they go to Trash with
+    /// the folder, and listing them separately would double-count the bytes and
+    /// make the confirmation dialog claim far more items than it deletes.
+    var selectedDiskNodes: [DiskNode] {
+        guard let root = rootNode else { return [] }
+        var found: [DiskNode] = []
+        func walk(_ node: DiskNode) {
+            if selectedNodes.contains(node.id) {
+                found.append(node)
+                return
+            }
+            node.children?.forEach(walk)
+        }
+        walk(root)
+        return found
+    }
+
+    /// Total size of all selected nodes — what deleting them would reclaim.
     var selectedTotalSize: UInt64 {
         guard let root = rootNode else { return 0 }
         var total: UInt64 = 0
@@ -659,8 +678,90 @@ final class AppModel: @unchecked Sendable {
 
     private func collectSelectedSizes(from node: DiskNode, into total: inout UInt64) {
         if selectedNodes.contains(node.id) {
-            total += node.physicalSize
+            // A selected folder reclaims everything under it, so the recursive
+            // total is the honest number. `physicalSize` alone is 0 for a
+            // directory, which made a folder selection read as "0 bytes".
+            total += node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize
+            // Descendants of a selected folder go with it; counting them again
+            // would double their bytes.
+            return
         }
         node.children?.forEach { collectSelectedSizes(from: $0, into: &total) }
+    }
+
+    // MARK: - Tree mutation
+
+    /// Removes nodes from the in-memory tree after they have been trashed, and
+    /// recomputes the folder totals above them.
+    ///
+    /// Re-scanning instead would be simpler, but a scan of a large volume takes
+    /// seconds and the user just deleted one file — the tree they are looking
+    /// at has to stay put.
+    func removeFromTree(paths: [String]) {
+        guard var root = rootNode, !paths.isEmpty else { return }
+        let doomed = Set(paths)
+        // Deleting the scan root itself leaves nothing to show.
+        guard !doomed.contains(root.path) else {
+            rootNode = nil
+            scanState = .idle
+            clearSelection()
+            return
+        }
+
+        prune(&root, doomed: doomed)
+        // Assigning through the property runs the didSet that drops the
+        // treeStats and filteredNodes caches; both are derived from the tree.
+        rootNode = root
+
+        // A deleted node must not stay selected — selection drives the detail
+        // pane and the batch bar.
+        selectedNodes = selectedNodes.filter { id in Self.contains(root, id: id) }
+        if let selected = selectedNode, doomed.contains(selected.path) {
+            selectedNode = nil
+        }
+
+        if case .completed = scanState {
+            let stats = SmartFilterService.computeStats(in: root)
+            scanState = .completed(
+                totalSize: root.totalPhysicalSize,
+                fileCount: stats.totalFiles + stats.totalDirectories
+            )
+        }
+    }
+
+    /// Drops `doomed` paths from `node`'s subtree and refreshes its total.
+    /// Returns true when anything below this node changed, so unaffected
+    /// branches are left alone rather than rebuilt.
+    @discardableResult
+    private func prune(_ node: inout DiskNode, doomed: Set<String>) -> Bool {
+        guard var children = node.children, !children.isEmpty else { return false }
+
+        var changed = false
+        var kept: [DiskNode] = []
+        kept.reserveCapacity(children.count)
+
+        for i in children.indices {
+            if doomed.contains(children[i].path) {
+                changed = true
+                continue
+            }
+            var child = children[i]
+            if prune(&child, doomed: doomed) { changed = true }
+            kept.append(child)
+        }
+        guard changed else { return false }
+
+        children = kept
+        node.children = children
+        node.childCount = UInt32(children.count)
+        node.totalPhysicalSize = children.isEmpty
+            ? node.physicalSize
+            : children.reduce(UInt64(0)) { $0 + $1.totalPhysicalSize }
+        return true
+    }
+
+    private static func contains(_ node: DiskNode, id: UUID) -> Bool {
+        if node.id == id { return true }
+        return node.children?.contains { contains($0, id: id) } ?? false
     }
 }

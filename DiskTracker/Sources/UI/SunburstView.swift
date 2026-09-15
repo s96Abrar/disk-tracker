@@ -77,6 +77,12 @@ struct SunburstView: View {
                         handleTap(at: event.location, center: center, maxRadius: maxRadius, segments: segments)
                     }
             )
+            // Resolved when the menu opens, so it targets the wedge under the
+            // cursor. The centre disc is navigation, not a node, so a
+            // right-click there correctly finds nothing.
+            .nodeActions(model: model) {
+                hoveredIndex.flatMap { segments.indices.contains($0) ? segments[$0].node : nil }
+            }
             .onChange(of: model.rootNode) { _, _ in
                 // A new scan invalidates whatever we were zoomed into.
                 focusNode = nil

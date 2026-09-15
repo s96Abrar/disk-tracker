@@ -32,10 +32,14 @@ private struct SortHeaderButton: View {
 
 // MARK: - Smart Filter Results
 
-/// Lists SmartFilterService results and routes delete requests back to ContentView.
+/// Lists SmartFilterService results.
+///
+/// Deletion used to go through an `onDeleteRequested` closure that no caller
+/// ever passed, so the trash button on every row silently did nothing. It now
+/// goes through the shared `DeletionController` like every other view.
 struct SmartFilterResultsView: View {
     var model: AppModel
-    var onDeleteRequested: ((DiskNode) -> Void)?
+    @Environment(DeletionController.self) private var deletion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,10 +95,11 @@ struct SmartFilterResultsView: View {
             SmartFilterResultRow(
                 result: result,
                 isSelected: model.selectedNode?.id == result.node.id,
-                onDelete: { onDeleteRequested?(result.node) },
+                onDelete: { deletion.requestDelete(result.node) },
                 onSelect: { model.selectNode(result.node) },
                 onShowInFinder: { FileOperationsService.shared.showInFinder(url: URL(fileURLWithPath: result.node.path)) }
             )
+            .nodeActions(result.node, model: model)
         }
         .listStyle(.inset)
     }
@@ -130,7 +135,7 @@ private struct SmartFilterResultRow: View {
                 .fill(Color.forFileKind(result.node.fileKind))
                 .frame(width: 20, height: 20)
                 .overlay(
-                    Image(systemName: iconForKind(result.node.fileKind))
+                    Image(systemName: result.node.fileKind.iconName)
                         .font(.system(size: 10))
                         .foregroundStyle(.white)
                 )
@@ -211,18 +216,6 @@ private struct SmartFilterResultRow: View {
         return formatter.string(from: date)
     }
 
-    private func iconForKind(_ kind: FileKind) -> String {
-        switch kind {
-        case .image: return "photo"
-        case .video: return "film"
-        case .audio: return "music.note"
-        case .document: return "doc"
-        case .archive: return "doc.zipper"
-        case .application: return "app"
-        case .directory: return "folder"
-        case .other: return "doc.questionmark"
-        }
-    }
 }
 
 // MARK: - Low Space Banner
