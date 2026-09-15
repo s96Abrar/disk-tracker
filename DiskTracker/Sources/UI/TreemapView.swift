@@ -95,6 +95,10 @@ struct TreemapView: View {
     /// unclickable, and indistinguishable from its own border.
     private static let minTileSide: CGFloat = 5
 
+    /// Rows thinner than this are not worth breaking out; the squarified
+    /// algorithm keeps packing into the current row until it reaches this.
+    private static let minRowThickness: CGFloat = 20
+
     /// Test seam: the layout is the behaviour worth asserting on, and driving
     /// it through a rendered Canvas would prove far less.
     func layoutForTesting(in size: CGSize) -> [TreemapRect] {
@@ -105,54 +109,73 @@ struct TreemapView: View {
         guard size.width > 0, size.height > 0 else { return [] }
 
         let items = visibleItems(in: size)
-        
+        guard !items.isEmpty else { return [] }
+
         var rects: [TreemapRect] = []
-        var remaining = items
+        rects.reserveCapacity(items.count)
         var bounds = CGRect(origin: .zero, size: size)
 
-        while !remaining.isEmpty {
-            let total = remaining.reduce(0) { $0 + $1.value }
-            let isHorizontal = bounds.width >= bounds.height
-            var row: [TreemapItem] = []
-            var rowSum: Double = 0
+        // A cursor rather than `remaining.removeFirst(n)`: dropping from the
+        // front of an array shifts every remaining element, once per row.
+        var cursor = items.startIndex
 
-            for item in remaining {
-                row.append(item)
-                rowSum += item.value
-                let rowFraction = rowSum / total
-                let rowThickness = isHorizontal ? bounds.height * rowFraction : bounds.width * rowFraction
-                
-                if row.count > 1 && rowThickness < 20 {
-                    row.removeLast()
+        // Running total of everything not yet placed, carried across rows.
+        // Re-summing the tail on each row was the same O(n) walk repeated.
+        var remainingValue = items.reduce(0.0) { $0 + $1.value }
+
+        while cursor < items.endIndex, remainingValue > 0 {
+            let isHorizontal = bounds.width >= bounds.height
+            let crossLength = isHorizontal ? bounds.height : bounds.width
+
+            // Grow the row until it is thick enough to be worth drawing.
+            var rowEnd = cursor
+            var rowSum = 0.0
+            while rowEnd < items.endIndex {
+                let candidateSum = rowSum + items[rowEnd].value
+                let thickness = crossLength * (candidateSum / remainingValue)
+                // One item always goes in, however thin — otherwise a single
+                // dominant tile leaves an empty row and the loop never advances.
+                if rowEnd > cursor, thickness >= Self.minRowThickness, rowSum > 0 {
                     break
                 }
+                rowSum = candidateSum
+                rowEnd = items.index(after: rowEnd)
+                if thickness >= Self.minRowThickness { break }
             }
+            guard rowEnd > cursor, rowSum > 0 else { break }
 
-            remaining.removeFirst(row.count)
-            let rowFraction = row.reduce(0) { $0 + $1.value } / total
-            let rowThickness = isHorizontal ? bounds.height * rowFraction : bounds.width * rowFraction
+            let rowThickness = crossLength * (rowSum / remainingValue)
+            let alongLength = isHorizontal ? bounds.width : bounds.height
             var offset: CGFloat = 0
 
-            for item in row {
-                let itemFraction = item.value / row.reduce(0) { $0 + $1.value }
-                let itemSize = isHorizontal ? bounds.width * itemFraction : bounds.height * itemFraction
-                
-                let rect: CGRect
-                if isHorizontal {
-                    rect = CGRect(x: bounds.minX + offset, y: bounds.minY, width: itemSize, height: rowThickness)
-                    offset += itemSize
-                } else {
-                    rect = CGRect(x: bounds.minX, y: bounds.minY + offset, width: rowThickness, height: itemSize)
-                    offset += itemSize
-                }
-                rects.append(TreemapRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height, label: item.label, color: item.color, node: item.node))
+            for i in cursor..<rowEnd {
+                let item = items[i]
+                // `rowSum` is hoisted: computing it per item made laying out a
+                // row quadratic in its own length.
+                let itemSize = alongLength * (item.value / rowSum)
+                let rect = isHorizontal
+                    ? CGRect(x: bounds.minX + offset, y: bounds.minY,
+                             width: itemSize, height: rowThickness)
+                    : CGRect(x: bounds.minX, y: bounds.minY + offset,
+                             width: rowThickness, height: itemSize)
+                offset += itemSize
+
+                rects.append(TreemapRect(
+                    x: rect.minX, y: rect.minY, width: rect.width, height: rect.height,
+                    label: item.label, color: item.color, node: item.node))
             }
 
-            if isHorizontal {
-                bounds = CGRect(x: bounds.minX, y: bounds.minY + rowThickness, width: bounds.width, height: bounds.height - rowThickness)
-            } else {
-                bounds = CGRect(x: bounds.minX + rowThickness, y: bounds.minY, width: bounds.width - rowThickness, height: bounds.height)
-            }
+            bounds = isHorizontal
+                ? CGRect(x: bounds.minX, y: bounds.minY + rowThickness,
+                         width: bounds.width, height: bounds.height - rowThickness)
+                : CGRect(x: bounds.minX + rowThickness, y: bounds.minY,
+                         width: bounds.width - rowThickness, height: bounds.height)
+
+            remainingValue -= rowSum
+            cursor = rowEnd
+
+            // Out of room: anything left would be drawn at zero size anyway.
+            if bounds.width <= 0 || bounds.height <= 0 { break }
         }
         return rects
     }
@@ -161,28 +184,53 @@ struct TreemapView: View {
     ///
     /// A folder with 200k immediate children would otherwise produce 200k
     /// tiles, almost all of them below a pixel — the whole cost of a frame
-    /// spent on marks nobody can see. Culling here rather than at draw time
-    /// also keeps the layout loop short.
+    /// spent on marks nobody can see.
     ///
     /// The area a tile receives is its share of the canvas, so the cut can be
-    /// made from the weights alone, before any rectangle exists. Squarified
-    /// layout keeps tiles roughly square, so a tile below `minTileSide`
-    /// squared is below `minTileSide` on at least one side.
+    /// made from the weights alone. That matters for more than layout time:
+    /// `DiskNode` is a large value type holding two strings and an array, so
+    /// filtering or mapping the node list copies every element and pays ARC
+    /// traffic on each. Working out the threshold first, then building a
+    /// `TreemapItem` only for survivors, keeps the copies proportional to what
+    /// is drawn rather than to what was scanned.
     private func visibleItems(in size: CGSize) -> [TreemapItem] {
-        let all = buildTreemapItems(from: model.rootNode, colors: colors)
-            .sorted { $0.value > $1.value }
+        guard let root = model.rootNode else { return [] }
 
-        let total = all.reduce(0.0) { $0 + $1.value }
+        // The tiles are the root's *children* — the root itself is the canvas.
+        guard let children = root.children, !children.isEmpty else {
+            let value = weight(root)
+            guard value > 0 else { return [] }
+            return [TreemapItem(label: root.name, value: value,
+                                color: colors[root.fileKind] ?? .gray, node: root)]
+        }
+
+        // Pass 1: total. Reads fields in place — passing each node to
+        // `weight(_:)` copies a struct holding two strings and an array.
+        var total = 0.0
+        for i in children.indices { total += weight(children, i) }
         guard total > 0 else { return [] }
 
+        // A tile's area is its share of the canvas, so the smallest weight that
+        // can fill `minTileSide` squared follows directly.
         let canvasArea = Double(size.width * size.height)
-        let minArea = Double(Self.minTileSide * Self.minTileSide)
+        guard canvasArea > 0 else { return [] }
+        let minValue = Double(Self.minTileSide * Self.minTileSide) * total / canvasArea
 
-        // Sorted largest-first, so the first tile too small ends the list.
-        if let cut = all.firstIndex(where: { ($0.value / total) * canvasArea < minArea }) {
-            return Array(all[..<cut])
+        // Pass 2: indices of the survivors. Indices are cheap to sort; nodes
+        // are not.
+        var keep: [Int] = []
+        for i in children.indices where weight(children, i) >= minValue {
+            keep.append(i)
         }
-        return all
+        guard !keep.isEmpty else { return [] }
+        keep.sort { weight(children, $0) > weight(children, $1) }
+
+        // Pass 3: build items only for what will be drawn.
+        return keep.map { i in
+            let child = children[i]
+            return TreemapItem(label: child.name, value: weight(children, i),
+                               color: colors[child.fileKind] ?? .gray, node: child)
+        }
     }
 
     /// Directories carry their weight in `totalPhysicalSize`; their own
@@ -191,20 +239,15 @@ struct TreemapView: View {
         Double(node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize)
     }
 
-    private func buildTreemapItems(from root: DiskNode?, colors: [FileKind: Color]) -> [TreemapItem] {
-        guard let root = root else { return [] }
-
-        // The tiles are the root's *children* — the root itself is the canvas.
-        // Including it as a sibling of its own children double-counted the tree
-        // and left a stray zero-area tile.
-        guard let children = root.children, !children.isEmpty else {
-            return [TreemapItem(label: root.name, value: weight(root), color: colors[root.fileKind] ?? .gray, node: root)]
-        }
-
-        return children
-            .filter { weight($0) > 0 }
-            .map { TreemapItem(label: $0.name, value: weight($0), color: colors[$0.fileKind] ?? .gray, node: $0) }
+    /// Weight of `children[index]` without copying the element — see the note
+    /// in `visibleItems`.
+    @inline(__always)
+    private func weight(_ children: [DiskNode], _ index: Int) -> Double {
+        Double(children[index].fileKind == .directory
+               ? children[index].totalPhysicalSize
+               : children[index].physicalSize)
     }
+
 }
 
 struct TreemapItem {

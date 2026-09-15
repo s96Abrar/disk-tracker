@@ -27,8 +27,9 @@ Canvas-based visualizations and owns file operations.
 | Swift app | `DiskTracker/Sources/` | GUI, file operations |
 | Engine binary | `Contents/Resources/disk-tracker-engine` | Sandbox forbids launching anything outside the bundle |
 
-**Performance targets** (none currently measured — see `4_COMPLETION_PLAN.md` P0-8):
-1M files ≤15 s · ≤300 MB · 60 fps · cold launch ≤2 s
+**Performance** (measured 2026-09-15 — `2_BUILD_PLAN.md` §3):
+1M files **1.74 s** / 215 MB against a 15 s / 300 MB budget · 100K in **0.11 s**.
+60 fps and launch-to-window still need an Instruments pass.
 
 **Constraints:**
 - macOS 15.0+ (Sequoia), Swift 6.0 strict concurrency

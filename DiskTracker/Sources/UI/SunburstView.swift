@@ -369,6 +369,19 @@ enum SunburstLayout {
         node.fileKind == .directory ? node.totalPhysicalSize : node.physicalSize
     }
 
+    /// Weight of `children[index]` without copying the element.
+    ///
+    /// Passing a `DiskNode` to `weight(_:)` copies it, and the struct holds two
+    /// strings and a child array — four ARC operations per call. In a scan of a
+    /// directory with tens of thousands of entries that traffic dominated
+    /// layout. Subscripting to a stored property reads the field in place.
+    @inline(__always)
+    static func weight(_ children: [DiskNode], _ index: Int) -> UInt64 {
+        children[index].fileKind == .directory
+            ? children[index].totalPhysicalSize
+            : children[index].physicalSize
+    }
+
     /// `node`'s share of `root`, 0...1. Zero-sized roots (an empty folder, or a
     /// scan that found nothing) would otherwise divide by zero into NaN and
     /// render as "nan%".
@@ -400,7 +413,8 @@ enum SunburstLayout {
                   let children = node.children,
                   !children.isEmpty else { return }
 
-            let total = children.reduce(0.0) { $0 + Double(weight($1)) }
+            var total = 0.0
+            for i in children.indices { total += Double(weight(children, i)) }
             guard total > 0 else { return }
 
             let inner = ringWidth * CGFloat(ring)
@@ -411,7 +425,26 @@ enum SunburstLayout {
             // keeps anything with a visible edge anywhere.
             let minSweep = minSweepDegrees(atRadius: inner)
 
-            for child in children.sorted(by: { weight($0) > weight($1) }) {
+            // Drop the invisible children *before* sorting, and carry indices
+            // rather than nodes.
+            //
+            // Sorting first meant ordering every child of a huge directory —
+            // tens of thousands — to keep the handful spanning a visible arc.
+            // Filtering nodes instead of indices still copied each survivor,
+            // and `DiskNode` holds two strings and an array, so every copy is
+            // ARC traffic. The weight a wedge needs is known up front, so this
+            // is one linear scan plus a sort over what is actually drawn.
+            guard sweep > 0 else { return }
+            let minWeight = total * (minSweep / sweep)
+
+            var visible: [Int] = []
+            for i in children.indices where Double(weight(children, i)) >= minWeight {
+                visible.append(i)
+            }
+            visible.sort { weight(children, $0) > weight(children, $1) }
+
+            for index in visible {
+                let child = children[index]
                 let fraction = Double(weight(child)) / total
                 let childSweep = sweep * fraction
                 // Sorted largest-first, so once one is too thin the rest are too.
