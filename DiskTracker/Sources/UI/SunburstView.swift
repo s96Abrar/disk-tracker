@@ -342,9 +342,21 @@ enum SunburstLayout {
     /// Rings drawn outside the centre disc.
     static let ringCount = 3
 
-    /// Wedges thinner than this are invisible at any realistic window size and
-    /// only cost layout + hit-test work.
-    static let minSweepDegrees: Double = 0.75
+    /// A wedge narrower than this along its inner edge is not worth drawing:
+    /// it is a hairline the user cannot see, click, or read a label from.
+    ///
+    /// Measured in points of arc length rather than degrees. A fixed angle is
+    /// radius-independent, so 0.75° was ~4pt on the outer ring but well under
+    /// a point on the inner one — culling unevenly, and keeping sub-pixel
+    /// wedges precisely where wedges are most numerous.
+    static let minArcLength: CGFloat = 5
+
+    /// Sweep, in degrees, that `minArcLength` corresponds to at `radius`.
+    /// Guards radius 0, where every sweep is a point and the division blows up.
+    static func minSweepDegrees(atRadius radius: CGFloat) -> Double {
+        guard radius > 0 else { return .infinity }
+        return Double(minArcLength / radius) * 180 / .pi
+    }
 
     static func centreRadius(_ maxRadius: CGFloat) -> CGFloat {
         maxRadius / CGFloat(ringCount + 1)
@@ -395,11 +407,15 @@ enum SunburstLayout {
             let outer = inner + ringWidth
             var angle = startAngle
 
+            // The inner edge is the shortest arc a wedge spans, so culling on it
+            // keeps anything with a visible edge anywhere.
+            let minSweep = minSweepDegrees(atRadius: inner)
+
             for child in children.sorted(by: { weight($0) > weight($1) }) {
                 let fraction = Double(weight(child)) / total
                 let childSweep = sweep * fraction
                 // Sorted largest-first, so once one is too thin the rest are too.
-                if childSweep < minSweepDegrees { break }
+                if childSweep < minSweep { break }
 
                 segments.append(SunburstSegment(
                     label: child.name,

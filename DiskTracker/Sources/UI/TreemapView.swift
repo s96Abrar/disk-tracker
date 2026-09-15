@@ -91,13 +91,23 @@ struct TreemapView: View {
         }
     }
 
-    private func calculateSquarifiedLayout(in size: CGSize) -> [TreemapRect] {
-        let items = buildTreemapItems(from: model.rootNode, colors: colors)
+    /// A tile smaller than this on either side is a sliver: unreadable,
+    /// unclickable, and indistinguishable from its own border.
+    private static let minTileSide: CGFloat = 5
 
+    /// Test seam: the layout is the behaviour worth asserting on, and driving
+    /// it through a rendered Canvas would prove far less.
+    func layoutForTesting(in size: CGSize) -> [TreemapRect] {
+        calculateSquarifiedLayout(in: size)
+    }
+
+    private func calculateSquarifiedLayout(in size: CGSize) -> [TreemapRect] {
         guard size.width > 0, size.height > 0 else { return [] }
+
+        let items = visibleItems(in: size)
         
         var rects: [TreemapRect] = []
-        var remaining = items.sorted { $0.value > $1.value }
+        var remaining = items
         var bounds = CGRect(origin: .zero, size: size)
 
         while !remaining.isEmpty {
@@ -145,6 +155,34 @@ struct TreemapView: View {
             }
         }
         return rects
+    }
+
+    /// Items worth laying out, largest first.
+    ///
+    /// A folder with 200k immediate children would otherwise produce 200k
+    /// tiles, almost all of them below a pixel — the whole cost of a frame
+    /// spent on marks nobody can see. Culling here rather than at draw time
+    /// also keeps the layout loop short.
+    ///
+    /// The area a tile receives is its share of the canvas, so the cut can be
+    /// made from the weights alone, before any rectangle exists. Squarified
+    /// layout keeps tiles roughly square, so a tile below `minTileSide`
+    /// squared is below `minTileSide` on at least one side.
+    private func visibleItems(in size: CGSize) -> [TreemapItem] {
+        let all = buildTreemapItems(from: model.rootNode, colors: colors)
+            .sorted { $0.value > $1.value }
+
+        let total = all.reduce(0.0) { $0 + $1.value }
+        guard total > 0 else { return [] }
+
+        let canvasArea = Double(size.width * size.height)
+        let minArea = Double(Self.minTileSide * Self.minTileSide)
+
+        // Sorted largest-first, so the first tile too small ends the list.
+        if let cut = all.firstIndex(where: { ($0.value / total) * canvasArea < minArea }) {
+            return Array(all[..<cut])
+        }
+        return all
     }
 
     /// Directories carry their weight in `totalPhysicalSize`; their own

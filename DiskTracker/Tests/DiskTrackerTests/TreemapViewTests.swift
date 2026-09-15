@@ -318,3 +318,89 @@ final class TreemapViewTests: XCTestCase {
         XCTAssertEqual(bounds.width, 70)
     }
 }
+
+// MARK: - Level of detail
+
+/// A folder with hundreds of thousands of immediate children would otherwise
+/// produce a tile each, almost all sub-pixel. These pin the cull so it cannot
+/// regress into drawing them again, and so it cannot start eating tiles that
+/// are genuinely visible.
+final class TreemapLevelOfDetailTests: XCTestCase {
+
+    private func file(_ name: String, _ size: UInt64) -> DiskNode {
+        DiskNode(recordIndex: 0, name: name, path: "/root/\(name)",
+                 logicalSize: size, physicalSize: size, fileKind: .document,
+                 isSystemProtected: false, modTimeSecs: 0, depth: 1,
+                 childCount: 0, children: [], totalPhysicalSize: size)
+    }
+
+    private func model(_ children: [DiskNode]) -> AppModel {
+        let root = DiskNode(recordIndex: 0, name: "root", path: "/root",
+                            logicalSize: 0, physicalSize: 0, fileKind: .directory,
+                            isSystemProtected: false, modTimeSecs: 0, depth: 0,
+                            childCount: UInt32(children.count), children: children,
+                            totalPhysicalSize: children.reduce(0) { $0 + $1.physicalSize })
+        let m = AppModel()
+        m.rootNode = root
+        return m
+    }
+
+    private func layout(_ m: AppModel, _ size: CGSize) -> [TreemapRect] {
+        TreemapView(model: m).layoutForTesting(in: size)
+    }
+
+    func testDropsSlivers() {
+        // One dominant file plus 5,000 crumbs that cannot each occupy 25pt².
+        var children = [file("huge.bin", 100_000_000)]
+        children += (0..<5_000).map { file("crumb\($0).txt", 10) }
+
+        let rects = layout(model(children), CGSize(width: 800, height: 600))
+
+        XCTAssertLessThan(rects.count, 50, "sub-pixel tiles should not be laid out at all")
+        XCTAssertTrue(rects.contains { $0.label == "huge.bin" }, "the visible tile must survive")
+    }
+
+    func testKeepsTilesBigEnoughToSee() {
+        // Four equal files on a large canvas: each gets a quarter, far above
+        // the threshold.
+        let children = (0..<4).map { file("f\($0).bin", 1_000_000) }
+        let rects = layout(model(children), CGSize(width: 800, height: 600))
+        XCTAssertEqual(rects.count, 4)
+    }
+
+    func testEveryLaidOutTileHasVisibleArea() {
+        var children = [file("big.bin", 50_000_000)]
+        children += (0..<2_000).map { file("small\($0).txt", 100) }
+
+        for rect in layout(model(children), CGSize(width: 900, height: 700)) {
+            XCTAssertGreaterThan(
+                rect.width * rect.height, 1,
+                "\(rect.label) was laid out with no visible area")
+        }
+    }
+
+    func testMoreRoomKeepsMoreTiles() {
+        // Sizes spanning four orders of magnitude, so the cutoff falls part way
+        // through the list rather than keeping or dropping all of it.
+        let children = (0..<300).map { file("f\($0).bin", UInt64(1_000_000 / ($0 + 1))) }
+
+        let small = layout(model(children), CGSize(width: 200, height: 150))
+        let large = layout(model(children), CGSize(width: 1600, height: 1200))
+
+        XCTAssertGreaterThan(large.count, small.count,
+                             "the cut is a pixel budget, so it must follow the canvas")
+        XCTAssertGreaterThan(small.count, 0, "a small canvas still shows the big tiles")
+        // That the smallest tiles are dropped at all is testDropsSlivers'
+        // job; on a 1600x1200 canvas even the smallest of these earns ~1000pt².
+    }
+
+    func testZeroSizedCanvasLaysOutNothing() {
+        let children = (0..<10).map { file("f\($0).bin", 1_000) }
+        XCTAssertTrue(layout(model(children), CGSize(width: 0, height: 0)).isEmpty)
+    }
+
+    func testEmptyTreeLaysOutNothing() {
+        let m = AppModel()
+        XCTAssertTrue(layout(m, CGSize(width: 400, height: 300)).isEmpty)
+    }
+}

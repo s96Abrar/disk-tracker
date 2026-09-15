@@ -466,3 +466,78 @@ final class SunburstViewTests: XCTestCase {
         XCTAssertEqual(zoomLevel, 0)
     }
 }
+
+// MARK: - Level of detail
+
+/// The cull used to be a fixed 0.75°, which is radius-independent: ~4pt of arc
+/// on the outer ring but well under a point on the inner one, so it kept
+/// sub-pixel wedges exactly where wedges are most numerous. It is now an arc
+/// length, and these pin that.
+final class SunburstLevelOfDetailTests: XCTestCase {
+
+    private func file(_ name: String, _ size: UInt64) -> DiskNode {
+        DiskNode(recordIndex: 0, name: name, path: "/root/\(name)",
+                 logicalSize: size, physicalSize: size, fileKind: .document,
+                 isSystemProtected: false, modTimeSecs: 0, depth: 1,
+                 childCount: 0, children: [], totalPhysicalSize: size)
+    }
+
+    private func root(_ children: [DiskNode]) -> DiskNode {
+        DiskNode(recordIndex: 0, name: "root", path: "/root",
+                 logicalSize: 0, physicalSize: 0, fileKind: .directory,
+                 isSystemProtected: false, modTimeSecs: 0, depth: 0,
+                 childCount: UInt32(children.count), children: children,
+                 totalPhysicalSize: children.reduce(0) { $0 + $1.physicalSize })
+    }
+
+    func testThresholdScalesWithRadius() {
+        let inner = SunburstLayout.minSweepDegrees(atRadius: 50)
+        let outer = SunburstLayout.minSweepDegrees(atRadius: 400)
+        XCTAssertGreaterThan(inner, outer,
+                             "a wedge near the centre needs more degrees to span the same arc")
+    }
+
+    func testThresholdMatchesTheArcLength() {
+        let radius: CGFloat = 200
+        let degrees = SunburstLayout.minSweepDegrees(atRadius: radius)
+        let arc = radius * CGFloat(degrees * .pi / 180)
+        XCTAssertEqual(arc, SunburstLayout.minArcLength, accuracy: 0.01)
+    }
+
+    func testZeroRadiusCullsEverything() {
+        // Guards the division; a radius-0 ring has no drawable arc at all.
+        XCTAssertEqual(SunburstLayout.minSweepDegrees(atRadius: 0), .infinity)
+    }
+
+    func testDropsHairlineWedges() {
+        var children = [file("huge.bin", 10_000_000)]
+        children += (0..<3_000).map { file("crumb\($0).txt", 10) }
+
+        let segments = SunburstLayout.build(root: root(children), maxRadius: 300, colors: [:])
+
+        XCTAssertLessThan(segments.count, 100, "hairline wedges should not be built")
+        XCTAssertTrue(segments.contains { $0.label == "huge.bin" })
+    }
+
+    func testEveryWedgeSpansAVisibleArc() {
+        var children = [file("big.bin", 5_000_000)]
+        children += (0..<1_500).map { file("tiny\($0).txt", 50) }
+
+        for segment in SunburstLayout.build(root: root(children), maxRadius: 320, colors: [:]) {
+            // The root disc spans the full circle at radius 0; skip it.
+            guard segment.innerRadius > 0 else { continue }
+            let sweep = segment.endAngle - segment.startAngle
+            let arc = segment.innerRadius * CGFloat(sweep * .pi / 180)
+            XCTAssertGreaterThanOrEqual(
+                arc, SunburstLayout.minArcLength - 0.01,
+                "\(segment.label) spans \(arc)pt on its inner edge")
+        }
+    }
+
+    func testABiggerCanvasKeepsMoreWedges() {
+        let children = (0..<200).map { file("f\($0).bin", UInt64(500_000 / ($0 + 1))) }
+        let small = SunburstLayout.build(root: root(children), maxRadius: 80, colors: [:])
+        let large = SunburstLayout.build(root: root(children), maxRadius: 600, colors: [:])
+        XCTAssertGreaterThan(large.count, small.count)
+    }
+}
