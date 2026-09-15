@@ -119,7 +119,12 @@ fn scan_100k_files_within_budget() {
     build_tree(dir.path(), 100_000).unwrap();
 
     let m = measure(dir.path());
-    report("100K files", &m, TARGET_100K_SECS, TARGET_MEMORY_MB_PER_1M / 10.0);
+    report(
+        "100K files",
+        &m,
+        TARGET_100K_SECS,
+        TARGET_MEMORY_MB_PER_1M / 10.0,
+    );
 
     assert!(
         m.records >= 100_000,
