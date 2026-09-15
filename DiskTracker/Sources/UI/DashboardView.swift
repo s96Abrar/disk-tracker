@@ -32,6 +32,8 @@ struct DashboardView: View {
                 mainArea
             }
 
+            LowSpaceBanner(monitor: model.freeSpaceMonitor)
+
             // Persistent bottom status bar — also shown on Scan Results.
             StatusBar(model: model)
         }

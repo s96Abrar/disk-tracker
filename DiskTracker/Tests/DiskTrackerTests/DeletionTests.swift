@@ -397,3 +397,84 @@ final class QuickLookPreviewTests: XCTestCase {
         XCTAssertEqual((item as? NSURL) as URL?, url)
     }
 }
+
+// MARK: - Low space
+
+/// `FreeSpaceMonitor` computed `alertLevel` correctly and set `isAlertShowing`
+/// on every transition, and nothing read either — the one thing meant to
+/// interrupt the user had no UI. These cover the thresholds the banner shows.
+final class LowSpaceAlertTests: XCTestCase {
+
+    private func snapshot(availablePercent: Double) -> FreeSpaceSnapshot {
+        let total: UInt64 = 1_000_000_000_000
+        let available = UInt64(Double(total) * availablePercent / 100)
+        return FreeSpaceSnapshot(
+            volume: DiskVolume(url: URL(fileURLWithPath: "/"), name: "Macintosh HD",
+                               totalCapacity: total, availableCapacity: available,
+                               isRemovable: false, isReadOnly: false),
+            timestamp: Date(),
+            availableBytes: available,
+            totalBytes: total)
+    }
+
+    func testEscalatesThroughTheSeverities() {
+        XCTAssertEqual(snapshot(availablePercent: 50).alertLevel(thresholdPercent: 20), .none)
+        XCTAssertEqual(snapshot(availablePercent: 15).alertLevel(thresholdPercent: 20), .warning)
+        XCTAssertEqual(snapshot(availablePercent: 8).alertLevel(thresholdPercent: 20), .critical)
+        XCTAssertEqual(snapshot(availablePercent: 3).alertLevel(thresholdPercent: 20), .emergency)
+    }
+
+    /// Critical and emergency are fixed at 10% and 5%; the setting only moves
+    /// the first warning.
+    func testThresholdOnlyMovesTheFirstWarning() {
+        let snap = snapshot(availablePercent: 30)
+        XCTAssertEqual(snap.alertLevel(thresholdPercent: 20), .none)
+        XCTAssertEqual(snap.alertLevel(thresholdPercent: 40), .warning,
+                       "a higher threshold warns sooner")
+
+        let low = snapshot(availablePercent: 8)
+        XCTAssertEqual(low.alertLevel(thresholdPercent: 50), .critical,
+                       "below 10% is critical regardless of the setting")
+    }
+
+    func testSeveritiesAreOrdered() {
+        XCTAssertLessThan(FreeSpaceAlertLevel.none, .warning)
+        XCTAssertLessThan(FreeSpaceAlertLevel.warning, .critical)
+        XCTAssertLessThan(FreeSpaceAlertLevel.critical, .emergency)
+    }
+
+    func testFullVolumeIsAnEmergency() {
+        XCTAssertEqual(snapshot(availablePercent: 0).alertLevel(thresholdPercent: 20), .emergency)
+    }
+
+    /// A zero-capacity volume must not divide by zero into a false alarm.
+    func testUnknownCapacityDoesNotAlarm() {
+        let snap = FreeSpaceSnapshot(
+            volume: DiskVolume(url: URL(fileURLWithPath: "/x"), name: "x",
+                               totalCapacity: 0, availableCapacity: 0,
+                               isRemovable: false, isReadOnly: false),
+            timestamp: Date(), availableBytes: 0, totalBytes: 0)
+        XCTAssertEqual(snap.availableFraction, 0)
+        XCTAssertEqual(snap.usedFraction, 0)
+    }
+
+    // MARK: Persisted threshold
+
+    func testThresholdPersists() {
+        let original = LowSpaceSettings.thresholdPercent
+        defer { LowSpaceSettings.thresholdPercent = original }
+
+        LowSpaceSettings.thresholdPercent = 35
+        XCTAssertEqual(LowSpaceSettings.thresholdPercent, 35)
+    }
+
+    /// `UserDefaults.double(forKey:)` returns 0 for an unset key, which would
+    /// mean "warn below 0%" — never warning at all.
+    func testUnsetThresholdFallsBackToTwentyPercent() {
+        let original = LowSpaceSettings.thresholdPercent
+        defer { LowSpaceSettings.thresholdPercent = original }
+
+        UserDefaults.standard.removeObject(forKey: "com.disktracker.lowSpaceThresholdPercent")
+        XCTAssertEqual(LowSpaceSettings.thresholdPercent, 20)
+    }
+}

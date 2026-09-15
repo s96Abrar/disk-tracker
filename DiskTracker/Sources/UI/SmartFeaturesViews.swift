@@ -218,53 +218,6 @@ private struct SmartFilterResultRow: View {
 
 }
 
-// MARK: - Low Space Banner
-
-/// Alert banner shown when free space drops below the configured threshold.
-struct LowSpaceBanner: View {
-    let level: FreeSpaceAlertLevel
-    let available: UInt64
-    let total: UInt64
-    var onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.white)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(level.description) — \(pct)% free remaining")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text("\(humanReadableBytes(available)) available of \(humanReadableBytes(total))")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-            Spacer()
-            Button("Dismiss", action: onDismiss)
-                .buttonStyle(.borderless)
-                .foregroundStyle(.white)
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(barColor)
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-
-    private var pct: Int {
-        guard total > 0 else { return 0 }
-        return Int(Double(available) / Double(total) * 100)
-    }
-
-    private var barColor: Color {
-        switch level {
-        case .none:     return Color(hex: level.colorHex)
-        case .warning:  return Color(hex: "F39C12")
-        case .critical: return Color(hex: "E67E22")
-        case .emergency:return Color(hex: "E74C3C")
-        }
-    }
-}
-
 // MARK: - Free Space Indicator
 
 /// Live compact readout of the monitored volume's free space.

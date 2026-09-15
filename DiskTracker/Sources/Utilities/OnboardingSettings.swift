@@ -39,3 +39,25 @@ enum OnboardingSettings {
         )
     }
 }
+
+// MARK: - Low space
+
+/// Persisted low-space warning threshold.
+///
+/// Separate from `FreeSpaceMonitor.thresholdPercent`, which is the live value:
+/// the monitor is rebuilt whenever a scan starts, so the user's choice has to
+/// outlive it.
+enum LowSpaceSettings {
+    private static let key = "com.disktracker.lowSpaceThresholdPercent"
+
+    /// Percentage of the volume below which the banner appears. Default 20%.
+    static var thresholdPercent: Double {
+        get {
+            let stored = UserDefaults.standard.double(forKey: key)
+            // `double(forKey:)` returns 0 for an unset key, which would warn
+            // constantly rather than never.
+            return stored > 0 ? stored : 20
+        }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+}

@@ -675,6 +675,7 @@ final class AppModel: @unchecked Sendable {
             ?? DiskVolume(url: url, name: url.lastPathComponent,
                           totalCapacity: 0, availableCapacity: 0,
                           isRemovable: false, isReadOnly: false)
+        freeSpaceMonitor.thresholdPercent = LowSpaceSettings.thresholdPercent
         freeSpaceMonitor.startMonitoring(volume: volume, interval: 5.0)
     }
 

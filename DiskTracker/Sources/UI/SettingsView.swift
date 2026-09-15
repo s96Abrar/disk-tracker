@@ -17,15 +17,19 @@ struct SettingsView: View {
     /// UI always reflects the persisted value.
     @State private var showWelcomeAtLaunch: Bool = OnboardingSettings.showAtLaunch
 
+    /// Low-space warning threshold, as a percentage of the volume.
+    @State private var lowSpaceThreshold: Double = LowSpaceSettings.thresholdPercent
+
     var body: some View {
         TabView {
             generalTab
                 .tabItem { Label("General", systemImage: "gear") }
         }
-        .frame(width: 480, height: 240)
+        .frame(width: 480, height: 300)
         .onAppear {
             // Re-sync from UserDefaults each time settings opens.
             showWelcomeAtLaunch = OnboardingSettings.showAtLaunch
+            lowSpaceThreshold = LowSpaceSettings.thresholdPercent
         }
     }
 
@@ -50,6 +54,29 @@ struct SettingsView: View {
                         )
                     }
                     .help("Re-open the welcome screen without restarting Disk Tracker.")
+                }
+            }
+
+            Section("Disk Space") {
+                // Below 10% and 5% the monitor escalates to critical and
+                // emergency regardless, so this only moves the first warning.
+                VStack(alignment: .leading, spacing: 4) {
+                    Slider(value: $lowSpaceThreshold, in: 10...50, step: 5) {
+                        Text("Warn below")
+                    } minimumValueLabel: {
+                        Text("10%").font(.caption)
+                    } maximumValueLabel: {
+                        Text("50%").font(.caption)
+                    }
+                    .onChange(of: lowSpaceThreshold) { _, newValue in
+                        LowSpaceSettings.thresholdPercent = newValue
+                        model.freeSpaceMonitor.thresholdPercent = newValue
+                    }
+
+                    Text("Warn when free space drops below \(Int(lowSpaceThreshold))% "
+                         + "of the scanned volume.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

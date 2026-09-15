@@ -123,6 +123,11 @@ struct DiskTrackerApp: App {
                     if appModel.phase == .onboarding {
                         appModel.navigate(to: .dashboard)
                     }
+                    // Monitoring used to start only once a scan finished, so a
+                    // nearly-full disk went unmentioned on the screen whose job
+                    // is to report disk health.
+                    appModel.startFreeSpaceMonitoring(
+                        for: URL(fileURLWithPath: appModel.currentScanPath))
                 }
         }
     }

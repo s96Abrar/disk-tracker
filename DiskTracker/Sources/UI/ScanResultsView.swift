@@ -48,6 +48,8 @@ struct ScanResultsView: View {
                 }
             }
 
+            LowSpaceBanner(monitor: model.freeSpaceMonitor)
+
             if model.isBatchMode {
                 BatchActionBar(model: model)
             }
