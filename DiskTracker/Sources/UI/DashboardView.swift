@@ -158,22 +158,9 @@ struct DashboardView: View {
     }
 
     private var emptyHistory: some View {
-        VStack(spacing: Spacing.xs) {
-            Image(systemName: "tray")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-            Text("No scans yet")
-                .font(.system(size: 13, weight: .medium))
-            Text("Pick a folder or volume to begin.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(Spacing.xl)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.regularMaterial)
-        )
+        EmptyState(icon: "tray", title: "No scans yet",
+                   message: "Pick a folder or volume to begin.", compact: true)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
     }
 
     private var recentScansTable: some View {
@@ -357,14 +344,7 @@ private struct ScanHistorySheet: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: Spacing.xs) {
-            Image(systemName: "tray")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-            Text("No scans recorded yet")
-                .font(.system(size: 13, weight: .semibold))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyState(icon: "tray", title: "No scans recorded yet")
     }
 }
 

@@ -105,20 +105,8 @@ struct SmartFilterResultsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No matches")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("This filter found nothing in the scanned tree.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
+        EmptyState(icon: "checkmark.seal", title: "No matches",
+                   message: "This filter found nothing in the scanned tree.")
     }
 }
 

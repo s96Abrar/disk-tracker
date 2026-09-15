@@ -91,18 +91,11 @@ struct FilteredResultsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: Spacing.xs) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-            Text("No matches")
-                .font(.system(size: 13, weight: .semibold))
-            Text(model.searchQuery.isEmpty
-                 ? "This scan has no \(model.selectedCategory.rawValue.lowercased())."
-                 : "Nothing named “\(model.searchQuery)” in \(model.selectedCategory.rawValue.lowercased()).")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyState(
+            icon: "magnifyingglass",
+            title: "No matches",
+            message: model.searchQuery.isEmpty
+                ? "This scan has no \(model.selectedCategory.rawValue.lowercased())."
+                : "Nothing named “\(model.searchQuery)” in \(model.selectedCategory.rawValue.lowercased()).")
     }
 }

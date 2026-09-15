@@ -7,8 +7,8 @@
 //   - Left: scan state indicator (idle/scanning/done/error) + path
 //   - Right: version
 //
-//  When a scan is running, a Back button appears so the user can leave
-//  Scan Results while the scan continues in the background.
+//  Back navigation lives in CategoriesSidebar, not here — two Back buttons on
+//  the same screen is one too many, and the sidebar is where the eye goes.
 //
 
 import SwiftUI
@@ -59,18 +59,6 @@ struct StatusBar: View {
             .truncationMode(.middle)
             .help(model.currentScanPath)
 
-        // Back button — only meaningful from Scan Results.
-        if model.phase == .scanResults {
-            Button {
-                model.navigate(to: .dashboard)
-            } label: {
-                Label("Back", systemImage: "chevron.left")
-                    .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.borderless)
-            .font(.system(size: 11))
-            .help("Return to dashboard. Scans continue in the background.")
-        }
     }
 
     private var idleIndicator: some View {

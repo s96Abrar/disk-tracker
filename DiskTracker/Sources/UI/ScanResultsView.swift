@@ -275,23 +275,11 @@ struct ScanResultsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: Spacing.sm) {
-            Image(systemName: "magnifyingglass.circle")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No scan loaded")
-                .font(.system(size: 14, weight: .semibold))
-            Text("Choose a folder to start a scan.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Button {
-                chooseFolderAndScan()
-            } label: {
-                Label("Choose Folder…", systemImage: "folder.badge.plus")
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyState(icon: "magnifyingglass.circle", title: "No scan loaded",
+                   message: "Choose a folder to start a scan.",
+                   action: chooseFolderAndScan,
+                   actionLabel: "Choose Folder…",
+                   actionIcon: "folder.badge.plus")
     }
 
     // MARK: - Actions

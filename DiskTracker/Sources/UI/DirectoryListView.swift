@@ -35,21 +35,9 @@ struct DirectoryListView: View {
             .listStyle(.inset)
             .background(Color(nsColor: .textBackgroundColor))
         } else {
-            VStack(spacing: 12) {
-                Spacer()
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("No scan data")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Text("Scan a folder to see directory contents")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-            .background(Color(nsColor: .textBackgroundColor))
+            EmptyState(icon: "magnifyingglass", title: "No scan data",
+                       message: "Scan a folder to see directory contents")
+                .background(Color(nsColor: .textBackgroundColor))
         }
     }
 }
