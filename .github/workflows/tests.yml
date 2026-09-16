@@ -1,19 +1,17 @@
 name: Tests
 
-# Manual only.
+# Runs automatically on push to main (i.e. after a PR merges), and by hand
+# otherwise. No `pull_request` trigger: macOS runners bill at 10x the Linux
+# rate against a limited free-minute allowance, and firing on every PR push
+# would exhaust it.
 #
-# The natural trigger is `push` to main / `pull_request`, but macOS runners bill
-# at 10x the Linux rate against a limited free-minute allowance, and this build
-# needs macOS for both xcodebuild and the getattrlistbulk syscalls. Running it
-# on every push would exhaust the allowance.
-#
-# So: run it by hand before merging to main, and before tagging a release.
-# To make it automatic later, add:
-#   push:
-#     branches: [main]
-#   pull_request:
-#     branches: [main]
+# To gate a merge on this passing, run it by hand against the PR branch
+# (Actions tab -> Tests -> Run workflow, pick the branch) before merging;
+# the run reports its status on that commit's SHA, which branch protection
+# can require.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       run_release_build:
