@@ -84,11 +84,13 @@ struct DiskTrackerApp: App {
             guard let error else { return }
             // NSAlert rather than SwiftUI state: a menu command has no view to
             // hang a presentation modifier on.
-            let alert = NSAlert()
-            alert.messageText = "Couldn't export the scan"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Couldn't export the scan"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
         }
     }
 
