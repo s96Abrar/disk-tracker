@@ -30,6 +30,9 @@ struct DiskTrackerApp: App {
             rootView
                 .environment(appModel)
                 .frame(minWidth: 1100, minHeight: 720)
+                // Launch timing ends when something is actually on screen, not
+                // when the process starts. See ./measure-launch.
+                .onAppear { LaunchMetrics.reportFirstFrame() }
         }
         .windowResizability(.contentSize)
         .commands { scanCommands }

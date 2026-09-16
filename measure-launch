@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#
+#  measure-launch — Cold launch time, process exec to first frame.
+#
+#  Usage: ./measure-launch [runs]   (default 5)
+#
+#  Times the interval a user actually experiences. `open` to process-start is
+#  trivial to measure and nearly meaningless — it stops before dyld loads the
+#  frameworks and before SwiftUI has drawn anything. The app reports the real
+#  figure from inside (LaunchMetrics), and this collects it from the unified log.
+#
+#  Uses the Release build, since Debug launch time is not what ships.
+#
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP="$ROOT/.build-release/Build/Products/Release/DiskTracker.app"
+RUNS="${1:-5}"
+
+GREEN='\033[32m'; YELLOW='\033[33m'; BOLD='\033[1m'; RESET='\033[0m'
+
+if [[ ! -d "$APP" ]]; then
+    echo "No Release build. Run ./package-release --verify first." >&2
+    exit 1
+fi
+
+echo -e "${BOLD}Cold launch — process exec to first frame${RESET}"
+echo "Build: Release · runs: $RUNS"
+echo
+
+times=()
+for i in $(seq 1 "$RUNS"); do
+    pkill -f "DiskTracker.app" 2>/dev/null || true
+    sleep 1
+
+    open -n "$APP"
+
+    # Poll the log rather than sleeping a fixed amount, so a fast launch is
+    # not reported as however long the sleep was.
+    measured=""
+    for _ in $(seq 1 60); do
+        sleep 0.25
+        # `--last`, not `--start "$(date ...)"`: date has second granularity, so
+        # a launch that logged within the same second as the start marker was
+        # intermittently excluded. That looked like the app not logging at all.
+        # `--info` is required because notice-level entries are otherwise
+        # filtered out of `log show`.
+        measured="$(/usr/bin/log show \
+            --predicate 'subsystem == "com.disktracker" AND category == "launch"' \
+            --last 30s --info --style compact 2>/dev/null \
+            | grep -oE 'first frame after [0-9]+\.[0-9]+' | tail -1 | grep -oE '[0-9]+\.[0-9]+' || true)"
+        [[ -n "$measured" ]] && break
+    done
+
+    if [[ -n "$measured" ]]; then
+        printf "  run %d: %ss\n" "$i" "$measured"
+        times+=("$measured")
+    else
+        printf "  run %d: ${YELLOW}no reading${RESET}\n" "$i"
+    fi
+    pkill -f "DiskTracker.app" 2>/dev/null || true
+done
+
+pkill -f "DiskTracker.app" 2>/dev/null || true
+
+if [[ ${#times[@]} -eq 0 ]]; then
+    echo "No readings collected." >&2
+    exit 1
+fi
+
+echo
+
+# Sorted with sort(1) rather than awk's asort, which macOS awk does not have —
+# the old fallback path made the output shape depend on which awk was present.
+sorted="$(printf '%s\n' "${times[@]}" | sort -n)"
+count=${#times[@]}
+median="$(echo "$sorted" | awk -v n="$count" 'NR == int((n + 1) / 2)')"
+worst="$(echo "$sorted" | tail -1)"
+
+printf "  median  %ss\n" "$median"
+printf "  worst   %ss\n" "$worst"
+echo
+awk -v w="$worst" 'BEGIN { printf "  target  2.0 s — %s\n", (w < 2.0 ? "PASS (worst case)" : "FAIL") }'
+
+# Machine-readable, for ./benchmark. Parsing the pretty output meant the two
+# scripts had to agree on spacing, and they quietly stopped agreeing.
+echo "LAUNCH_MEDIAN_SECONDS=$median"

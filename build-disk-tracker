@@ -99,15 +99,23 @@ build_swift() {
 
     cd "$SWIFT_DIR"
 
-    local conditions=()
+    # Passed as a single string, not an array: macOS ships bash 3.2, where
+    # "${empty[@]}" trips `set -u`. That failed the default build silently,
+    # since the wrapper swallowed the error into $exit_code.
+    local conditions=""
     if [[ "$BUILD_V05" == true ]]; then
         # $(inherited) keeps DEBUG, which the project already sets.
-        conditions=(SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) DISKTRACKER_V05')
+        conditions='SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DISKTRACKER_V05'
     fi
 
     log_info "Running: xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker -configuration Debug build"
-    xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker \
-        -configuration Debug "${conditions[@]}" build || exit_code=$?
+    if [[ -n "$conditions" ]]; then
+        xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker \
+            -configuration Debug "$conditions" build || exit_code=$?
+    else
+        xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker \
+            -configuration Debug build || exit_code=$?
+    fi
 
     if [[ $exit_code -eq 0 ]]; then
         log_ok "Swift app built successfully"

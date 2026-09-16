@@ -12,8 +12,8 @@
 //! The subprocess is also the more defensive choice. A traversal engine walks
 //! whatever a user points it at, and a crash on a malformed volume takes down a
 //! child process rather than the app. Restoring an in-process FFI is only worth
-//! it if profiling shows the pipe copy mattering — the buffer is roughly 90MB
-//! for a million files, well inside the memory budget.
+//! it if profiling shows the pipe copy mattering — the buffer measures 62MB
+//! for a million records, well inside the memory budget.
 
 pub mod directory_walker;
 pub mod file_record;

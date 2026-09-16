@@ -87,6 +87,51 @@ OVERALL="$(xcrun xccov view --report --only-targets "$BUNDLE" 2>/dev/null \
     | grep "DiskTracker.app" | grep -oE '[0-9]+\.[0-9]+%' | head -1)"
 echo "Whole app (includes SwiftUI view bodies, excluded from the target): ${OVERALL:-unknown}"
 
+# ── Badge ────────────────────────────────────────────────────────────
+#
+# Aggregate covered/total across the core files, not a mean of percentages:
+# a 56-line file at 100% and a 673-line file at 84% do not average to 92%.
+CORE_PCT="$(
+  for file in "${CORE_FILES[@]}"; do
+      grep -F "$file" <<<"$REPORT" | grep -oE '\([0-9]+/[0-9]+\)' | tail -1
+  done | tr -d '()' | awk -F/ '{c += $1; t += $2} END {if (t > 0) printf "%.1f", 100 * c / t}'
+)"
+
+if [[ -n "$CORE_PCT" ]]; then
+    colour=red
+    awk "BEGIN{exit !($CORE_PCT >= 60)}" && colour="#dfb317"
+    awk "BEGIN{exit !($CORE_PCT >= 80)}" && colour="#97ca00"
+    awk "BEGIN{exit !($CORE_PCT >= 90)}" && colour="#4c1"
+    [[ "$colour" == "red" ]] && colour="#e05d44"
+
+    mkdir -p "$ROOT/badges"
+    # Hand-written rather than fetched from shields.io: the badge has to be
+    # correct offline and in a repo with no CI upload step, and a remote image
+    # would show whatever it showed last regardless of this run.
+    cat > "$ROOT/badges/coverage.svg" <<SVG
+<svg xmlns="http://www.w3.org/2000/svg" width="140" height="20" role="img" aria-label="core coverage: ${CORE_PCT}%">
+  <title>core coverage: ${CORE_PCT}%</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r"><rect width="140" height="20" rx="3" fill="#fff"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="95" height="20" fill="#555"/>
+    <rect x="95" width="45" height="20" fill="${colour}"/>
+    <rect width="140" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle"
+     font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="47.5" y="15" fill="#010101" fill-opacity=".3">core coverage</text>
+    <text x="47.5" y="14">core coverage</text>
+    <text x="117.5" y="15" fill="#010101" fill-opacity=".3">${CORE_PCT}%</text>
+    <text x="117.5" y="14">${CORE_PCT}%</text>
+  </g>
+</svg>
+SVG
+    echo "Core aggregate: ${CORE_PCT}%  →  badges/coverage.svg"
+fi
+
 if $REPORT_ONLY; then
     echo
     echo -e "${BOLD}Every file${RESET}"

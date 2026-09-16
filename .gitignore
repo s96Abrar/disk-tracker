@@ -12,3 +12,6 @@ DiskTracker/Binaries
 # Release packaging (package-release)
 dist/
 .build-release/
+
+# Coverage run artifacts (badges/ is committed)
+.coverage.xcresult/
