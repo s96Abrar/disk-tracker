@@ -2,6 +2,21 @@
 //  NetworkVolumeScannerTests.swift
 //  DiskTrackerTests
 //
+//  NOT BUILT IN v0.1 — gated behind `DISKTRACKER_V05`.
+//
+//  No build configuration defines that condition, so this file compiles to
+//  nothing today. It is kept rather than deleted because it works and is
+//  tested; it is the starting point for the phase named above, tracked in
+//  `documents/5_FUTURE_TARGETS.md` §3.
+//
+//  To build it, add to the DiskTracker target's build settings:
+//      SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DISKTRACKER_V05
+//
+//  `./build-disk-tracker --v05` does exactly that, and is run in CI so this
+//  code cannot rot into something that no longer compiles.
+//
+
+#if DISKTRACKER_V05
 
 import XCTest
 import Foundation
@@ -79,3 +94,5 @@ final class NetworkVolumeScannerTests: XCTestCase {
         XCTAssertEqual(NetworkVolumeScanner.testExtractHost(from: "/etc/hosts"), "Unknown")
     }
 }
+
+#endif  // DISKTRACKER_V05

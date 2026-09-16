@@ -101,6 +101,41 @@ jobs:
           name: test-results
           path: DiskTracker/TestResults.xcresult
 
+  deferred:
+    name: Deferred v0.5 code
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            traversal-engine/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('traversal-engine/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Build engine
+        run: ./build-disk-tracker --rust
+
+      # The services deferred out of v0.1 are gated behind DISKTRACKER_V05, so
+      # nothing in a normal build touches them. Without this job they would rot
+      # into code that no longer compiles while still looking alive in the tree.
+      - name: Compile and test the gated code
+        working-directory: DiskTracker
+        run: |
+          xcodebuild test \
+            -project DiskTracker.xcodeproj \
+            -scheme DiskTracker \
+            -destination 'platform=macOS' \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) DISKTRACKER_V05'
+
   bundle:
     name: Release bundle
     if: inputs.run_release_build

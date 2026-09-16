@@ -1,5 +1,15 @@
 # DiskTracker Privileged Helper Tool
 
+> **Not built in v0.1.** This directory is not referenced by
+> `DiskTracker.xcodeproj`, so nothing here is compiled — there is no build flag
+> to flip, unlike the Swift services gated behind `DISKTRACKER_V05`.
+>
+> It stays because it is the starting point for APFS snapshot deletion
+> (`documents/5_FUTURE_TARGETS.md` §2.4–2.5). The blocker is not time:
+> installing a privileged helper via `SMAppService` **requires a Developer ID
+> signature**, and this project signs ad-hoc. It cannot ship until there is a
+> paid Apple Developer Program membership.
+
 This directory contains the SMAppService-based privileged helper that runs as root and exposes NSXPC endpoints for file-system operations the sandboxed DiskTracker app cannot perform directly.
 
 ## Role in Architecture

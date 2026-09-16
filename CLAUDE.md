@@ -83,8 +83,13 @@ Finder do. Reporting shared extents once is deferred
   `project.pbxproj` edit.
 - **SF Symbol names are not validated at build time.** A wrong name renders a
   blank row. Several Material Design names survived from the HTML mock.
-- **A passing test suite does not mean the code is reachable.** Five services
-  and `helper-tool/` have full suites and zero callers.
+- **Deferred code is gated, not deleted.** Five services sit behind
+  `#if DISKTRACKER_V05` and compile to nothing in a normal build; `helper-tool/`
+  is not in the Xcode project at all. Build them with
+  `./build-disk-tracker --v05`. A normal suite runs 349 tests, the gated one 376.
+- **A passing test suite does not mean the code is reachable.** That gate exists
+  because those services had full suites and zero callers, which reads as
+  finished work.
 - **`DiskNode` is a value type.** Build a child completely before appending it
   to its parent; appending copies.
 - **Never interpolate a tree or scan result into a log line.** Interpolation is
