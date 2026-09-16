@@ -2,8 +2,8 @@
 //  CoverageGapTests.swift
 //  DiskTrackerTests
 //
-//  Fills the gaps `check-coverage` reported against the >80% target in
-//  3_STANDARDS.md §3: the scan state machine, free-space monitoring, history
+//  Fills the gaps `./check-coverage` reported against its >80% target for
+//  core files: the scan state machine, free-space monitoring, history
 //  persistence, volume enumeration and bundle analysis.
 //
 //  These are the behaviours a user hits constantly and nothing exercised —

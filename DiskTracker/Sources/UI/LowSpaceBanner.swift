@@ -10,7 +10,7 @@
 //
 //  A banner rather than a system notification: a notification needs
 //  authorization the app does not currently request, and is only worth it when
-//  the app is in the background. See `5_FUTURE_TARGETS.md` for that upgrade.
+//  the app is in the background, which is a later concern.
 //
 
 import SwiftUI

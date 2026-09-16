@@ -13,7 +13,7 @@
 #  --v05 defines DISKTRACKER_V05, which turns on the services deferred out of
 #  v0.1 (network volumes, S.M.A.R.T., APFS snapshots, FSEvents, background
 #  scans). They ship in no release yet; this exists so gated code cannot rot
-#  into something that no longer compiles. See documents/5_FUTURE_TARGETS.md §3.
+#  into something that no longer compiles.
 #
 
 set -euo pipefail

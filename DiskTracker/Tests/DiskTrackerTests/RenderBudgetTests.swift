@@ -7,7 +7,8 @@
 //  These do NOT measure frames per second, and the timings are not shipping
 //  numbers: the test target is built with -Onone, where this kind of tight
 //  numeric loop runs an order of magnitude slower than Release. Actual fps
-//  needs an Instruments pass against a Release build — see 2_BUILD_PLAN.md §3.
+//  needs an Instruments pass against a Release build. `./benchmark` reports
+//  the Release layout cost, which is the half these tests guard.
 //
 //  What they do catch is the class of bug that makes 60fps impossible at any
 //  optimisation level: layout whose cost scales with the size of the scan

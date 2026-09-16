@@ -2,16 +2,8 @@
 
 **Scope (v0.1):** scan a **local** folder or volume, show where the space went,
 delete what you don't want. Network volumes, S.M.A.R.T., APFS snapshots, the
-privileged helper, DuckDB, FSEvents and background scans are **deferred** —
-`documents/5_FUTURE_TARGETS.md`.
-
-**Reading Order (for AI agents):**
-1. `documents/1_PROJECT_GUIDE.md` — Architecture, scan contract, data models
-2. `documents/2_BUILD_PLAN.md` — Requirements, phase status, release checklist
-3. `documents/3_STANDARDS.md` — Coding standards, testing, git workflow
-4. `documents/4_COMPLETION_PLAN.md` — What's left before v0.1 ships
-5. `documents/5_FUTURE_TARGETS.md` — Deferred features
-6. `documents/market_research.md` — Competitive analysis (external reference)
+privileged helper, DuckDB, FSEvents and background scans are **deferred**; the
+Swift ones are gated behind `DISKTRACKER_V05`.
 
 ---
 
@@ -27,7 +19,7 @@ Canvas-based visualizations and owns file operations.
 | Swift app | `DiskTracker/Sources/` | GUI, file operations |
 | Engine binary | `Contents/Resources/disk-tracker-engine` | Sandbox forbids launching anything outside the bundle |
 
-**Performance** (measured 2026-09-15 — `2_BUILD_PLAN.md` §3):
+**Performance** (measured; regenerate with `./benchmark --full`):
 1M files **1.74 s** / 215 MB against a 15 s / 300 MB budget · 100K in **0.11 s**.
 60 fps and launch-to-window still need an Instruments pass.
 
@@ -54,7 +46,8 @@ xcodebuild test -project DiskTracker/DiskTracker.xcodeproj \
 open -a "Disk Tracker"
 ```
 
-Release build and DMG packaging: `documents/2_BUILD_PLAN.md` §4 (verified).
+Release build and DMG packaging: `./package-release`. Install steps for users
+are in `RELEASE_NOTES.md`.
 
 ---
 
@@ -72,8 +65,7 @@ Release build and DMG packaging: `documents/2_BUILD_PLAN.md` §4 (verified).
 **APFS clones are counted once per clone, not once per shared extent.** The
 original guide claimed `ATTR_FIL_ALLOCSIZE` deduplicated them; measurement says
 otherwise — two clones of a 3MB file report 3MB each, exactly as `du` and
-Finder do. Reporting shared extents once is deferred
-(`documents/5_FUTURE_TARGETS.md` §2.2).
+Finder do. Reporting shared extents once is deferred.
 
 ---
 
@@ -95,5 +87,6 @@ Finder do. Reporting shared extents once is deferred
 - **Never interpolate a tree or scan result into a log line.** Interpolation is
   eager and will build a multi-GB string.
 
-For technical detail, the scan contract, and the implementation checklist, see
-the documents above.
+The scan wire format is specified in `traversal-engine/src/wire.rs` and
+mirrored in `DiskTracker/Sources/Core/Engine/ScanBuffer.swift`; both sides have
+tests asserting the same byte offsets.

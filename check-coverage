@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-#  check-coverage — Code coverage against the targets in 3_STANDARDS.md §3.
+#  check-coverage — Code coverage for the scanner, algorithms and state machines.
 #
 #  Usage:
 #    ./check-coverage           Report, and fail if a core file is under target
 #    ./check-coverage --report  Report every file, pass regardless
 #
 #  The >80% target applies to the scanner, the algorithms and the state
-#  machines — not to SwiftUI view bodies, which `3_STANDARDS.md` §3.1
-#  explicitly excludes from unit testing. A single whole-app percentage would
+#  machines — not to SwiftUI view bodies, which this project does not unit
+#  test. A single whole-app percentage would
 #  average those in and measure nothing useful, so this checks the files the
 #  target actually names.
 #
@@ -41,7 +41,7 @@ CORE_FILES=(
 )
 
 echo -e "${BOLD}Disk Tracker — coverage${RESET}"
-echo "Target: ${TARGET}% on core files (3_STANDARDS.md §3)"
+echo "Target: ${TARGET}% on core files (scanner, algorithms, state machines)"
 echo
 
 rm -rf "$BUNDLE"

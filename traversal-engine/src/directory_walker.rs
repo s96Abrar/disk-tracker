@@ -31,7 +31,7 @@ pub struct BulkEntry {
     /// Note this does **not** deduplicate APFS clones: two clones of one file
     /// each report their full allocation, so summing them counts the shared
     /// storage twice. Every standard tool behaves this way; reporting shared
-    /// extents once is deferred (`5_FUTURE_TARGETS.md` §2.2).
+    /// extents once is deferred.
     pub physical_size: u64,
     pub mode: u32,
     pub mtime: i64,
@@ -40,7 +40,7 @@ pub struct BulkEntry {
 }
 
 /// Buffer handed to `getattrlistbulk`, per the 128KB-per-thread design in
-/// `1_PROJECT_GUIDE.md` §3. Larger buffers return more entries per syscall;
+/// thread. Larger buffers return more entries per syscall;
 /// past this size the gain flattens and the memory is wasted per worker.
 const BULK_BUFFER_SIZE: usize = 128 * 1024;
 

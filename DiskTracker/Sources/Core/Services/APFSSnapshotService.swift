@@ -10,7 +10,7 @@
 //  No build configuration defines that condition, so this file compiles to
 //  nothing today. It is kept rather than deleted because it works and is
 //  tested; it is the starting point for the phase named above, tracked in
-//  `documents/5_FUTURE_TARGETS.md` §3.
+//  a post-v0.1 target.
 //
 //  To build it, add to the DiskTracker target's build settings:
 //      SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DISKTRACKER_V05

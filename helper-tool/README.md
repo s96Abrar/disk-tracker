@@ -5,7 +5,7 @@
 > to flip, unlike the Swift services gated behind `DISKTRACKER_V05`.
 >
 > It stays because it is the starting point for APFS snapshot deletion
-> (`documents/5_FUTURE_TARGETS.md` §2.4–2.5). The blocker is not time:
+> deletion. The blocker is not time:
 > installing a privileged helper via `SMAppService` **requires a Developer ID
 > signature**, and this project signs ad-hoc. It cannot ship until there is a
 > paid Apple Developer Program membership.

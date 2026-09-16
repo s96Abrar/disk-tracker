@@ -10,7 +10,7 @@
 #  The README quotes these numbers. Regenerating them here is what keeps the
 #  README from drifting into claims nobody has checked lately.
 #
-#  Targets come from documents/1_PROJECT_GUIDE.md §1.3.
+#  Targets: 100K files <=3s, 1M <=15s, <=300MB at 1M, 60fps, launch <=2s.
 #
 
 set -uo pipefail

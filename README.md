@@ -87,8 +87,7 @@ Every number below is produced by `./benchmark --full`, not estimated.
 | Sunburst layout, 50K children | ≤ 16.67 ms | **0.13 ms** |
 | Cold launch to first frame | ≤ 2 s | **0.287 s** |
 
-<sub>Apple M3 Pro, macOS 26.6.2. Targets from `documents/1_PROJECT_GUIDE.md` §1.3.
-Regenerate with `./benchmark --full --markdown`.</sub>
+<sub>Apple M3 Pro, macOS 26.6.2. Regenerate with `./benchmark --full --markdown`.</sub>
 
 Roughly **550,000 files per second** on a warm cache.
 
@@ -152,7 +151,6 @@ million files, comfortably inside budget.
 | `traversal-engine/src/` | Scanner, directory walker, wire format |
 | `DiskTracker/Sources/Core/` | Scan transport, app state, domain services |
 | `DiskTracker/Sources/UI/` | Views and visualizations |
-| `documents/` | Architecture, build plan, standards, roadmap |
 
 ---
 
@@ -195,9 +193,9 @@ xcodebuild test -project DiskTracker/DiskTracker.xcodeproj \
 algorithms and the state machines.
 
 Whole-app coverage is 34.6%, and that number is not the target — it averages in
-SwiftUI view bodies, which `documents/3_STANDARDS.md` §3.1 excludes from unit
-testing. A single app-wide figure would mostly measure how much UI code exists.
-`./check-coverage` checks the files the target actually names.
+SwiftUI view bodies, which this project does not unit test. A single app-wide
+figure would mostly measure how much UI code exists. `./check-coverage` checks
+the files the target actually names.
 
 ### Deferred code
 
@@ -229,9 +227,6 @@ v0.1 is local disk scanning, and stops there on purpose.
 | APFS clone reporting | Extent-identity tracking |
 | Incremental scanning, hard-link dedup | — |
 
-Full rationale, and what each would take, in
-[`documents/5_FUTURE_TARGETS.md`](documents/5_FUTURE_TARGETS.md).
-
 **On APFS clones:** two clones of a 3 MB file are reported as 3 MB each, not
 once. `du` and Finder agree. Reporting shared extents once is a real feature,
 not a rounding decision, and it is deferred.
@@ -240,5 +235,4 @@ not a rounding decision, and it is deferred.
 
 ## License
 
-Not yet chosen. Until one is added, no permission to use, copy or distribute is
-granted.
+MIT — see [LICENSE](LICENSE).

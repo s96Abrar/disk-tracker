@@ -10,7 +10,7 @@
 #  There is no Developer ID for this project, so the app is ad-hoc signed.
 #  It runs (an ad-hoc signature satisfies the arm64 requirement) but Gatekeeper
 #  rejects it on download; users clear the quarantine flag by hand. See
-#  documents/2_BUILD_PLAN.md §4.
+#  the release notes.
 #
 #  Both this script and .github/workflows/release.yml call the same steps, so
 #  what CI publishes is what you can reproduce locally.
@@ -107,8 +107,8 @@ else
     warn "Sandbox entitlement missing"
 fi
 
-# Read-write is required before Trash works. Warn, don't fail — the
-# entitlement is widened in P0-5, not here.
+# Read-write is required before Trash works. Warn rather than fail: the
+# entitlement lives in the app target, and this script only reports on it.
 if codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "user-selected.read-write"; then
     ok "Entitlement: user-selected.read-write (Trash will work)"
 else
@@ -157,7 +157,7 @@ rmdir "$MOUNT" 2>/dev/null || true
 header "Ready"
 echo "  $DMG"
 echo
-echo "Install instructions for users (also in documents/2_BUILD_PLAN.md §4.4):"
+echo "Install instructions for users (also in RELEASE_NOTES.md):"
 echo
 echo "  1. Open the DMG, drag Disk Tracker to Applications"
 echo "  2. Run:  xattr -dr com.apple.quarantine /Applications/DiskTracker.app"

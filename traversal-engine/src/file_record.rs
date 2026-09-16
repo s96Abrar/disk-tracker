@@ -77,22 +77,25 @@ pub fn append_to_string_table(buf: &mut Vec<u8>, s: &str) -> u32 {
     offset
 }
 
-/// Read a NUL-terminated string from ` buf` starting at `offset`.
-///
-/// # Safety
-/// `offset` must point to a valid NUL-terminated region inside `buf`.
-pub unsafe fn read_string_from_table(buf: &[u8], offset: u32) -> &str {
-    let start = offset as usize;
-    let end = buf[start..]
-        .iter()
-        .position(|&b| b == 0)
-        .unwrap_or(buf.len() - start);
-    std::str::from_utf8_unchecked(&buf[start..start + end])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reads a name back out of the string table.
+    ///
+    /// Lives in the tests because nothing in the engine reads its own table:
+    /// names are resolved on the Swift side by `ScanBuffer`. The production
+    /// version of this was `pub unsafe` and used `from_utf8_unchecked`, with
+    /// no caller anywhere — dead unsafe code being the worst kind. This one is
+    /// safe and only has to hold for what these tests write.
+    fn read_back(buf: &[u8], offset: u32) -> &str {
+        let start = offset as usize;
+        let end = buf[start..]
+            .iter()
+            .position(|&b| b == 0)
+            .map_or(buf.len(), |p| start + p);
+        std::str::from_utf8(&buf[start..end]).expect("string table must hold UTF-8")
+    }
 
     #[test]
     fn test_node_type_conversions() {
@@ -113,11 +116,7 @@ mod tests {
         // Verify NUL terminator
         assert_eq!(buf, b"test.txt\0");
 
-        // Read back
-        unsafe {
-            let s = read_string_from_table(&buf, offset);
-            assert_eq!(s, "test.txt");
-        }
+        assert_eq!(read_back(&buf, offset), "test.txt");
     }
 
     #[test]
@@ -134,11 +133,9 @@ mod tests {
         // offset2 + "file2.txt\0" = 10 + 10 = 20
         assert_eq!(offset3, 20);
 
-        unsafe {
-            assert_eq!(read_string_from_table(&buf, offset1), "file1.txt");
-            assert_eq!(read_string_from_table(&buf, offset2), "file2.txt");
-            assert_eq!(read_string_from_table(&buf, offset3), "");
-        }
+        assert_eq!(read_back(&buf, offset1), "file1.txt");
+        assert_eq!(read_back(&buf, offset2), "file2.txt");
+        assert_eq!(read_back(&buf, offset3), "");
     }
 
     #[test]
@@ -148,9 +145,7 @@ mod tests {
         assert_eq!(offset, 0);
         assert_eq!(buf, b"\0");
 
-        unsafe {
-            assert_eq!(read_string_from_table(&buf, offset), "");
-        }
+        assert_eq!(read_back(&buf, offset), "");
     }
 
     #[test]
@@ -159,9 +154,7 @@ mod tests {
         let mut buf = Vec::new();
         let offset = append_to_string_table(&mut buf, &long_name);
 
-        unsafe {
-            assert_eq!(read_string_from_table(&buf, offset), long_name);
-        }
+        assert_eq!(read_back(&buf, offset), long_name);
     }
 
     #[test]

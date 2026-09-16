@@ -1,4 +1,4 @@
-//! Scale tests — the performance targets from `2_BUILD_PLAN.md` §3, measured.
+//! Scale tests — the scan engine's performance targets, measured.
 //!
 //! The existing `performance_tests.rs` stops at 10K files against a 1M target,
 //! which proves the scanner runs but not that it meets its budget.
@@ -21,7 +21,7 @@ use std::time::Instant;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
-// Budgets — 1_PROJECT_GUIDE.md §1.3
+// Budgets
 // ---------------------------------------------------------------------------
 
 const TARGET_100K_SECS: f64 = 3.0;
