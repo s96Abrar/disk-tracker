@@ -92,35 +92,12 @@ jobs:
       - name: Build, verify and package
         run: ./package-release
 
-      - name: Write release notes
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          VERSION: ${{ steps.tag.outputs.version }}
-        run: |
-          cat > /tmp/notes.md <<EOF
-          ## Disk Tracker $TAG
-
-          Scans a local folder or volume and shows where the space went.
-
-          ### Installing
-
-          1. Open \`DiskTracker-v$VERSION.dmg\` and drag **Disk Tracker** to Applications.
-          2. Run this once in Terminal:
-             \`\`\`
-             xattr -dr com.apple.quarantine /Applications/DiskTracker.app
-             \`\`\`
-          3. Open it normally.
-
-          Step 2 is required because this build is **ad-hoc signed rather than
-          notarized** — Apple notarization needs a paid Developer Program
-          membership. The command clears the "downloaded from the internet" flag
-          on this app only; it does not disable Gatekeeper system-wide.
-
-          > Right-click → Open does **not** work for ad-hoc signed apps on Apple
-          > Silicon. The \`xattr\` command is required.
-
-          **Requires macOS 15.0 or later.**
-          EOF
+      # RELEASE_NOTES.md is the single source. Generating notes here as well
+      # meant two copies of the install instructions that could disagree, and
+      # the one users read would be whichever this file said last.
+      - name: Check release notes exist
+        run: test -f RELEASE_NOTES.md || {
+          echo "::error::RELEASE_NOTES.md is missing"; exit 1; }
 
       - name: Publish
         env:
@@ -129,7 +106,7 @@ jobs:
         run: |
           gh release create "$TAG" dist/*.dmg \
             --title "$TAG" \
-            --notes-file /tmp/notes.md \
+            --notes-file RELEASE_NOTES.md \
             --verify-tag
 
       - name: Upload DMG artifact
