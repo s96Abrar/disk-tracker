@@ -618,16 +618,10 @@ final class AppBundleAnalyzerTests2: XCTestCase {
 
 // MARK: - Restoring a scan
 
-// The restore path polls on the main queue; @MainActor lets the compiler see
-// that the polling closure never leaves it.
-@MainActor
 final class ScanRestoreTests: XCTestCase {
 
     private let storageKey = "DiskTracker.ScanHistory"
-    // `setUp`/`tearDown` are nonisolated overrides, so they cannot touch a
-    // main-actor property. XCTest runs them serially around each test, so
-    // there is no concurrent access to guard against.
-    nonisolated(unsafe) private var saved: Any?
+    private var saved: Any?
 
     override func setUp() {
         saved = UserDefaults.standard.object(forKey: storageKey)
@@ -641,7 +635,7 @@ final class ScanRestoreTests: XCTestCase {
 
     /// Re-opening a past scan must not re-walk the filesystem — that is the
     /// entire reason trees are persisted.
-    func testRestoringLoadsTheSavedTree() throws {
+    func testRestoringLoadsTheSavedTree() async throws {
         let model = AppModel()
         let file = DiskNode(recordIndex: 0, name: "saved.bin", path: "/old/saved.bin",
                             logicalSize: 2048, physicalSize: 2048, fileKind: .archive,
@@ -663,14 +657,10 @@ final class ScanRestoreTests: XCTestCase {
         XCTAssertEqual(model.currentScanPath, "/old")
 
         // Decoding runs off the main thread, so wait for the tree to land.
-        let loaded = expectation(description: "tree restored")
         let deadline = Date().addingTimeInterval(5)
-        func poll() {
-            if model.rootNode != nil || Date() > deadline { loaded.fulfill(); return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: poll)
+        while model.rootNode == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
         }
-        DispatchQueue.main.async(execute: poll)
-        wait(for: [loaded], timeout: 6)
 
         XCTAssertEqual(model.rootNode?.name, "old")
         XCTAssertEqual(model.rootNode?.children?.count, 1)
