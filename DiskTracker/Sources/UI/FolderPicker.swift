@@ -14,6 +14,7 @@ import AppKit
 enum FolderPicker {
     /// Prompts for a directory. Returns nil when the user cancels.
     /// Must be called on the main thread — `runModal()` is blocking.
+    @MainActor
     static func chooseScanFolder() -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -36,6 +37,7 @@ enum FolderPicker {
     /// Inside the sandbox the returned URL carries its own write grant for this
     /// launch, which is all an export needs — unlike a scan folder, there is
     /// nothing to re-open later, so no bookmark is kept.
+    @MainActor
     static func chooseExportDestination(defaultName: String) -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = defaultName
