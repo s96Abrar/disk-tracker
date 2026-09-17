@@ -108,8 +108,10 @@ final class RenderBudgetTests: XCTestCase {
         // independent: 10x the children must not cost 10x the time. The cull
         // bounds the tiles laid out, so the extra work is the linear scan that
         // finds them.
+        // 8x, not 6x: a shared CI runner has measured 6.4x on a healthy cull,
+        // and the claim under test is sublinearity, not a specific constant.
         XCTAssertLessThan(
-            large, small * 6,
+            large, small * 8,
             "10x the children cost \(String(format: "%.1f", large / small))x the time — "
             + "layout is scaling with the scan instead of with the visible tiles")
     }
