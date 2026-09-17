@@ -10,6 +10,10 @@ import XCTest
 import SwiftUI
 @testable import DiskTracker
 
+// `TreemapView.layout` is main-actor-isolated, as view code is. XCTest already
+// runs these on the main thread; the annotation is what lets the compiler see
+// that.
+@MainActor
 final class TreemapViewTests: XCTestCase {
 
     // MARK: - TreemapItem Tests
@@ -325,6 +329,7 @@ final class TreemapViewTests: XCTestCase {
 /// produce a tile each, almost all sub-pixel. These pin the cull so it cannot
 /// regress into drawing them again, and so it cannot start eating tiles that
 /// are genuinely visible.
+@MainActor
 final class TreemapLevelOfDetailTests: XCTestCase {
 
     private func file(_ name: String, _ size: UInt64) -> DiskNode {
@@ -411,6 +416,7 @@ final class TreemapLevelOfDetailTests: XCTestCase {
 /// views disagreed about what "zoom" meant. These cover the layout half —
 /// which node's children get drawn. The gesture and breadcrumb are SwiftUI and
 /// are exercised by hand.
+@MainActor
 final class TreemapDrillDownTests: XCTestCase {
 
     private func file(_ name: String, _ path: String, _ size: UInt64) -> DiskNode {

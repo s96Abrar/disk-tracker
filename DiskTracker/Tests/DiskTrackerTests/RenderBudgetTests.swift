@@ -25,6 +25,10 @@
 import XCTest
 @testable import DiskTracker
 
+// The layout entry points under test are main-actor-isolated, as view code is.
+// XCTest already runs these on the main thread; the annotation is what lets the
+// compiler see that.
+@MainActor
 final class RenderBudgetTests: XCTestCase {
 
     /// Loose Debug-mode ceiling. 60fps leaves 16.67ms per frame for everything,

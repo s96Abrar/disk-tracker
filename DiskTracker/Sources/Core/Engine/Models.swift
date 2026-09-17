@@ -76,6 +76,17 @@ struct DiskNode: Identifiable, Equatable, Sendable, Hashable, Codable {
     var childCount: UInt32 = 0
     var children: [DiskNode]?
 
+    /// `id` is deliberately absent: it is a per-process handle for SwiftUI, not
+    /// part of what a scan *is*. Identity here is `recordIndex` + `path` (see
+    /// `==` below), so a decoded tree minting fresh UUIDs changes nothing. The
+    /// synthesized keys would have encoded it and then silently dropped it on
+    /// the way back in, which is what the compiler warns about.
+    private enum CodingKeys: String, CodingKey {
+        case recordIndex, name, path, logicalSize, physicalSize, fileKind
+        case isSystemProtected, modTimeSecs, depth, childCount, children
+        case totalPhysicalSize
+    }
+
     static func == (lhs: DiskNode, rhs: DiskNode) -> Bool {
         lhs.recordIndex == rhs.recordIndex && lhs.path == rhs.path
     }

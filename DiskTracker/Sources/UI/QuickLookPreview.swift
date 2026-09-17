@@ -60,7 +60,7 @@ final class QuickLookPreview: NSObject {
 // `@preconcurrency`: QLPreviewPanel calls its data source on the main thread,
 // but the SDK protocol carries no actor annotation, so Swift 6 cannot see that
 // and rejects the conformance from a @MainActor type.
-extension QuickLookPreview: @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
+extension QuickLookPreview: @preconcurrency QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
         url == nil ? 0 : 1
     }
@@ -86,14 +86,23 @@ private struct QuickLookResponder: NSViewRepresentable {
 
         override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
 
+        // AppKit drives the preview panel from the main thread, but the
+        // QuickLookUI additions to NSResponder carry no actor annotation, so
+        // Swift sees these overrides as nonisolated and rejects touching the
+        // panel's main-actor properties. `assumeIsolated` states what AppKit
+        // already guarantees; it traps rather than corrupts if that ever fails.
         override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
-            panel.dataSource = QuickLookPreview.shared
-            panel.delegate = QuickLookPreview.shared
+            MainActor.assumeIsolated {
+                panel.dataSource = QuickLookPreview.shared
+                panel.delegate = QuickLookPreview.shared
+            }
         }
 
         override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
-            panel.dataSource = nil
-            panel.delegate = nil
+            MainActor.assumeIsolated {
+                panel.dataSource = nil
+                panel.delegate = nil
+            }
         }
     }
 }

@@ -618,10 +618,16 @@ final class AppBundleAnalyzerTests2: XCTestCase {
 
 // MARK: - Restoring a scan
 
+// The restore path polls on the main queue; @MainActor lets the compiler see
+// that the polling closure never leaves it.
+@MainActor
 final class ScanRestoreTests: XCTestCase {
 
     private let storageKey = "DiskTracker.ScanHistory"
-    private var saved: Any?
+    // `setUp`/`tearDown` are nonisolated overrides, so they cannot touch a
+    // main-actor property. XCTest runs them serially around each test, so
+    // there is no concurrent access to guard against.
+    nonisolated(unsafe) private var saved: Any?
 
     override func setUp() {
         saved = UserDefaults.standard.object(forKey: storageKey)
