@@ -109,30 +109,6 @@ final class TreemapViewTests: XCTestCase {
         )
     }
 
-    func testEmptyBoundsReturnsEmptyRects() {
-        // Guard clause: size.width > 0, size.height > 0
-        let size = CGSize(width: 0, height: 100)
-        XCTAssertFalse(size.width > 0)
-    }
-
-    func testZeroWidthBoundsReturnsEmptyRects() {
-        let size = CGSize(width: 0, height: 100)
-        guard size.width > 0 else { return }
-        XCTFail("Should have returned early")
-    }
-
-    func testZeroHeightBoundsReturnsEmptyRects() {
-        let size = CGSize(width: 100, height: 0)
-        guard size.height > 0 else { return }
-        XCTFail("Should have returned early")
-    }
-
-    func testLayoutAlgorithmHandlesEmptyRoot() {
-        let root: DiskNode? = nil
-        guard let root = root else { return }
-        XCTFail("Should have returned early for nil root")
-    }
-
     func testLayoutAlgorithmHandlesNilChildren() {
         let root = makeLeafNode(name: "file.txt", path: "/file.txt", size: 1000)
         // Root has no children, should still be handled
@@ -208,12 +184,6 @@ final class TreemapViewTests: XCTestCase {
     }
 
     // MARK: - Item Building Tests
-
-    func testBuildTreemapItemsFromNilRoot() {
-        let root: DiskNode? = nil
-        guard let root = root else { return }
-        XCTFail("Should return early for nil root")
-    }
 
     func testBuildTreemapItemsIncludesRoot() {
         let root = makeLeafNode(name: "Home", path: "/home", size: 1000, kind: .directory)

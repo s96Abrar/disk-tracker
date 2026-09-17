@@ -32,7 +32,7 @@ final class PerformanceTests: XCTestCase {
         }
 
         var children: [DiskNode] = []
-        for i in 0..<breadth {
+        for _ in 0..<breadth {
             children.append(makeTree(depth: depth - 1, breadth: breadth, size: size))
         }
 
