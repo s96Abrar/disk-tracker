@@ -1,7 +1,8 @@
-# Disk Tracker v0.1.0
+# Disk Tracker v0.1.0 — Find the 40 GB you forgot about
 
-First shareable build. Scans a local folder or volume, shows where the space
-went, and lets you delete what you don't want.
+Point it at a folder or a whole volume. It scans a million files in under two
+seconds, draws you a map of where the space went, and lets you delete the
+offenders without leaving the app.
 
 ## Installing
 
@@ -22,19 +23,21 @@ it does not disable Gatekeeper system-wide, and the signature stays valid.
 
 **Requires macOS 15.0 or later.**
 
-## What's in it
+## What you get
 
-- Sunburst, treemap and list views, all click-to-descend with a breadcrumb back
-- Search, category filters, and smart filters for large, old, empty, duplicate
-  and oversized-bundle items
-- Move to Trash, singly or batched, with a confirmation stating what you'd
-  actually reclaim; protected system paths are refused
-- Quick Look on spacebar
-- JSON and CSV export
-- Live free-space readout with a configurable low-space warning
-- Scan history that re-opens without re-scanning
+- **Three ways to look at it** — sunburst, treemap and list, all click-to-descend
+  with a breadcrumb to climb back out
+- **Filters that find the junk for you** — large, old, empty, duplicate and
+  oversized-bundle, plus search and category filters
+- **Delete with your eyes open** — Move to Trash one item or a whole batch,
+  after a confirmation that states what you'd actually reclaim; protected
+  system paths are refused outright
+- **Spacebar for Quick Look**, exactly like Finder
+- **Export to JSON or CSV** when you want the numbers elsewhere
+- **Live free-space readout** with a low-space warning you can set
+- **Scan history** that re-opens a previous scan without walking the disk again
 
-## Performance
+## Speed
 
 | Measurement | Target | Result |
 |---|---|---|
@@ -42,7 +45,9 @@ it does not disable Gatekeeper system-wide, and the signature stays valid.
 | Memory, 1M files | ≤ 300 MB | **164.1 MB** |
 | Cold launch to first frame | ≤ 2 s | **0.287 s** |
 
-Apple M3 Pro. Reproduce with `./benchmark --full`.
+A Rust core walks the filesystem with `getattrlistbulk` and Rayon work-stealing;
+SwiftUI draws the result on an immediate-mode Canvas. Apple M3 Pro, reproduce
+with `./benchmark --full`.
 
 ## Known limits
 
