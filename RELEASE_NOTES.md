@@ -1,3 +1,16 @@
+# Disk Tracker v0.1.1 — Find the 40 GB you forgot about
+
+## What's new in v0.1.1
+
+**App Icon.** The app now displays a custom icon instead of a blank placeholder. The icon is a squircle in brand indigo carrying a treemap of blocks, with one green for reclaimable space. Generated from code at each native resolution to stay readable at all sizes.
+
+**UI Fixes.**
+- Low-space alerts now correctly name the containing **volume** (e.g., "Macintosh HD") instead of the scanned folder
+- Recent Scans timestamps show relative time once ("2 hours ago") instead of a live clock that redraws every second
+- Welcome screen status bar displays the last scanned path instead of showing the untouched default
+
+---
+
 # Disk Tracker v0.1.0 — Find the 40 GB you forgot about
 
 Point it at a folder or a whole volume. It scans a million files in under two
