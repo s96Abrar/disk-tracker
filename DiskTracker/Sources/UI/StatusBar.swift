@@ -37,28 +37,50 @@ struct StatusBar: View {
 
     @ViewBuilder
     private var leftGroup: some View {
-        switch model.scanState {
-        case .idle:
-            idleIndicator
+        // On the welcome screen no scan is in flight, and `currentScanPath` is
+        // still the untouched home-directory default — "Ready for scan" beside
+        // a path read as though that folder were queued up. Report the last
+        // recorded scan instead; a running scan still wins.
+        if model.phase == .dashboard, model.canStartNewScan,
+           let last = model.scanHistory.mostRecentScan {
+            lastScanIndicator(last)
+            pathText(last.volumePath)
+        } else {
+            switch model.scanState {
+            case .idle:
+                idleIndicator
 
-        case .scanning:
-            scanningIndicator
+            case .scanning:
+                scanningIndicator
 
-        case .completed(let total, let count):
-            completedIndicator(total: total, count: count)
+            case .completed(let total, let count):
+                completedIndicator(total: total, count: count)
 
-        case .failed(let error):
-            failedIndicator(error: error)
+            case .failed(let error):
+                failedIndicator(error: error)
+            }
+
+            // Path being scanned.
+            pathText(model.currentScanPath)
         }
+    }
 
-        // Path being scanned.
-        Text(model.currentScanPath)
+    private func pathText(_ path: String) -> some View {
+        Text(path)
             .font(.system(size: 11, design: .monospaced))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.middle)
-            .help(model.currentScanPath)
+            .help(path)
+    }
 
+    private func lastScanIndicator(_ entry: ScanHistoryEntry) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(Color.brandOK).frame(width: 8, height: 8)
+            Text("Last scan \(entry.scanDate.formatted(.relative(presentation: .named))) · \(entry.totalFiles) items · \(humanReadableBytes(entry.totalSize))")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var idleIndicator: some View {
