@@ -204,7 +204,10 @@ struct DashboardView: View {
     @ViewBuilder
     private func tableRow(entry: ScanHistoryEntry, isLast: Bool) -> some View {
         HStack {
-            Text(entry.scanDate, style: .relative)
+            // `.relative` style counts seconds and redraws every tick, so the
+            // column flickered "1 min, 4 sec / 1 min, 5 sec". One named unit,
+            // rendered once: "1 minute ago", "yesterday".
+            Text(entry.scanDate.formatted(.relative(presentation: .named)))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)

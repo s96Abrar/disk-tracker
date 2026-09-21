@@ -507,10 +507,20 @@ final class AppModel: @unchecked Sendable {
 
     // MARK: - Free Space
 
-    /// Begin live free-space monitoring for the scanned volume.
+    /// Begin live free-space monitoring for the volume *containing* `url`.
+    ///
+    /// Matching a mounted volume by exact URL only ever hit when the scanned
+    /// path was a volume root. Every other path fell back to its own last
+    /// component, so the low-space alert read "Downloads is critically low on
+    /// space" — a folder name where a volume name belongs. The byte counts
+    /// were right all along; `refreshFreeSpace` asks the filesystem, which
+    /// resolves the volume itself.
     func startFreeSpaceMonitoring(for url: URL) {
-        let volume = DiskVolumeService.mountedVolumes().first(where: { $0.url == url })
-            ?? DiskVolume(url: url, name: url.lastPathComponent,
+        let values = try? url.resourceValues(forKeys: [.volumeURLKey, .volumeNameKey])
+        let volumeURL = values?.volume ?? url
+        let volume = DiskVolumeService.mountedVolumes().first(where: { $0.url == volumeURL })
+            ?? DiskVolume(url: volumeURL,
+                          name: values?.volumeName ?? volumeURL.lastPathComponent,
                           totalCapacity: 0, availableCapacity: 0,
                           isRemovable: false, isReadOnly: false)
         freeSpaceMonitor.thresholdPercent = LowSpaceSettings.thresholdPercent

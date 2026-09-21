@@ -462,4 +462,24 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(model.scanHistory.mostRecentScan)
         XCTAssertEqual(model.scanHistory.mostRecentScan?.volumePath, "/")
     }
+
+    // MARK: - Free Space Monitoring
+
+    /// Bug: monitoring a subfolder named the alert after the folder
+    /// ("Downloads is critically low on space") instead of its volume.
+    /// The contrast case is the volume root, which was always correct.
+    func testMonitoringASubfolderReportsTheVolumeName() throws {
+        let volumeName = try XCTUnwrap(
+            URL(fileURLWithPath: NSHomeDirectory())
+                .resourceValues(forKeys: [.volumeNameKey]).volumeName)
+
+        let model = AppModel()
+        model.startFreeSpaceMonitoring(for: URL(fileURLWithPath: NSHomeDirectory()))
+        XCTAssertEqual(model.freeSpaceMonitor.snapshot?.volume.name, volumeName)
+
+        model.startFreeSpaceMonitoring(for: URL(fileURLWithPath: "/"))
+        XCTAssertEqual(model.freeSpaceMonitor.snapshot?.volume.name, volumeName)
+
+        model.freeSpaceMonitor.stopMonitoring()
+    }
 }
