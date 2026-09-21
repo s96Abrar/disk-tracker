@@ -81,6 +81,12 @@ ENGINE="$APP/Contents/Resources/disk-tracker-engine"
 [[ -x "$ENGINE" ]] || fail "Engine missing from bundle. App Sandbox forbids launching anything outside the .app, so a scan would fail at runtime."
 ok "Engine bundled ($(du -h "$ENGINE" | cut -f1))"
 
+# A missing asset catalog fails silently: the build still succeeds and the app
+# ships with the generic blank document icon. Regenerate with ./make-icon.
+[[ -f "$APP/Contents/Resources/AppIcon.icns" ]] \
+    || fail "AppIcon.icns missing from bundle — the app would ship with a blank icon. Run ./make-icon"
+ok "App icon bundled"
+
 BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 [[ "$BUNDLE_VERSION" == "$VERSION" ]] \
     || fail "Bundle version $BUNDLE_VERSION does not match source $VERSION"
