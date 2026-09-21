@@ -1,3 +1,5 @@
+<img src="DiskTracker/Sources/Assets.xcassets/AppIcon.appiconset/icon_128x128%402x.png" width="128" alt="Disk Tracker icon">
+
 # Disk Tracker
 
 [![Tests](https://github.com/s96Abrar/disk-tracker/actions/workflows/tests.yml/badge.svg)](https://github.com/s96Abrar/disk-tracker/actions/workflows/tests.yml)

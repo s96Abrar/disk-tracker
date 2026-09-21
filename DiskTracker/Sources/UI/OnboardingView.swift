@@ -116,19 +116,12 @@ struct OnboardingView: View {
 
     private var header: some View {
         VStack(spacing: Spacing.md) {
-            // App icon mark.
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .frame(width: 64, height: 64)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-                Image(systemName: "internaldrive")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Color(hex: "C2C1FF"))
-            }
+            // The real app icon, not a stand-in — it already has the
+            // squircle and the shadow baked in.
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 72, height: 72)
+                .accessibilityHidden(true)
 
             VStack(spacing: Spacing.xs) {
                 Text("Welcome to Disk Tracker")
