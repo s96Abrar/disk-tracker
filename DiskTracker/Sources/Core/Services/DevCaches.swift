@@ -36,7 +36,7 @@ struct DevCache: Hashable, Sendable {
     /// False for folders that are state, not cache — measured only.
     var trashable = true
 
-    var path: String { DevCaches.realHome + "/" + relativePath }
+    var path: String { ScopedAccess.realHome + "/" + relativePath }
 
     static let all: [DevCache] = [
         DevCache(tool: .homebrew, label: "Downloads", relativePath: "Library/Caches/Homebrew",
@@ -70,15 +70,6 @@ struct DevCache: Hashable, Sendable {
 }
 
 enum DevCaches {
-    /// The user's real home folder. Inside the sandbox `NSHomeDirectory()` is
-    /// the app container, which holds none of these caches.
-    static let realHome: String = {
-        guard let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir else {
-            return NSHomeDirectory()
-        }
-        return String(cString: dir)
-    }()
-
     struct Measured: Sendable, Identifiable {
         let cache: DevCache
         /// Childless root: the size is all the list needs, and a DerivedData
@@ -90,7 +81,7 @@ enum DevCaches {
     /// Measures every cache that exists, largest first. Nil without a home
     /// grant. Blocking — one engine run per folder; call off the main thread.
     static func measure() -> [Measured]? {
-        guard let grant = ScopedAccess.access(path: realHome) else { return nil }
+        guard let grant = ScopedAccess.access(path: ScopedAccess.realHome) else { return nil }
         defer { withExtendedLifetime(grant) {} }
 
         let scanner = DirectoryScannerBridge()

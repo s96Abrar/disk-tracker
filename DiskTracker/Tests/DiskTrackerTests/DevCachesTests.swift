@@ -28,8 +28,8 @@ final class DevCachesTests: XCTestCase {
     }
 
     func testRealHomeIsNotTheContainer() {
-        XCTAssertFalse(DevCaches.realHome.contains("/Library/Containers/"))
-        XCTAssertTrue(DevCaches.realHome.hasPrefix("/"))
+        XCTAssertFalse(ScopedAccess.realHome.contains("/Library/Containers/"))
+        XCTAssertTrue(ScopedAccess.realHome.hasPrefix("/"))
     }
 
     func testOnlyArchivesCarriesAWarning() {

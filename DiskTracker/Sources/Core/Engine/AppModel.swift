@@ -43,6 +43,7 @@ final class AppModel: @unchecked Sendable {
     /// No new filesystem scan is performed.
     func restoreScanFromHistory(_ entry: ScanHistoryEntry) {
         currentScanPath = entry.volumePath
+        scanGrant = ScopedAccess.access(path: entry.volumePath)
         phase = .scanResults
 
         // Reading + decoding a recorded tree takes seconds on a large scan —
@@ -138,7 +139,14 @@ final class AppModel: @unchecked Sendable {
     /// Path currently being scanned (or last scanned). Used by the toolbar
     /// + status bar so the user always sees which folder a running scan
     /// belongs to.
-    var currentScanPath: String = NSHomeDirectory()
+    var currentScanPath: String = ScopedAccess.realHome
+
+    /// Access to the folder whose results are on screen. Held for as long as
+    /// they are, not just for the scan: trashing from the results needs it
+    /// too, and a bookmark grant dropped at scan end left Trash failing on
+    /// any scan restored or re-run after a relaunch.
+    @ObservationIgnored
+    private var scanGrant: ScopedAccess.Grant?
 
     /// Tracks which folder node IDs are expanded in the list view.
     var expandedNodeIds: Set<UUID> = []
@@ -441,10 +449,9 @@ final class AppModel: @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             // Re-establish sandbox access to a folder chosen in an earlier
-            // launch. Held for the whole scan; nil is normal for paths that
-            // need no grant, and the scan proceeds either way.
-            // Access ends when the grant deinits, so it is held explicitly for
-            // the whole scan rather than left to the optimiser.
+            // launch; nil is normal for paths that need no grant, and the scan
+            // proceeds either way. Access ends when the grant deinits, so it is
+            // held explicitly for the scan, then handed to `scanGrant`.
             let grant = ScopedAccess.access(path: path)
             defer { withExtendedLifetime(grant) {} }
 
@@ -474,6 +481,7 @@ final class AppModel: @unchecked Sendable {
 
             DispatchQueue.main.async {
                 guard generation == self.scanGeneration else { return }
+                self.scanGrant = grant
                 self.rootNode = rootNode
                 self.cachedTreeStats = stats
                 self.activeSmartFilter = nil

@@ -16,7 +16,7 @@ struct DevCachesSheet: View {
 
     @State private var deletion = DeletionController()
     /// Held while the sheet is open: measuring and trashing both need it.
-    @State private var homeGrant = ScopedAccess.access(path: DevCaches.realHome)
+    @State private var homeGrant = ScopedAccess.access(path: ScopedAccess.realHome)
     @State private var items: [DevCaches.Measured]?
     @State private var selected: Set<String> = []
 
@@ -60,7 +60,7 @@ struct DevCachesSheet: View {
                 message: "The caches live in your home folder, which the app can't see until you allow it once.",
                 action: {
                     guard FolderPicker.grantHomeAccess() else { return }
-                    homeGrant = ScopedAccess.access(path: DevCaches.realHome)
+                    homeGrant = ScopedAccess.access(path: ScopedAccess.realHome)
                     Task { await measure() }
                 },
                 actionLabel: "Allow Access…",
