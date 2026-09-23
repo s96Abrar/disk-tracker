@@ -92,8 +92,8 @@ struct DashboardSidebar: View {
                 label: "Home",
                 isPrimary: true
             ) {
-                guard model.canStartNewScan else { return }
-                model.startScan(path: NSHomeDirectory())
+                guard model.canStartNewScan, let home = FolderPicker.homeFolder() else { return }
+                model.startScan(path: home)
             }
 
             Divider().padding(.vertical, Spacing.xs)

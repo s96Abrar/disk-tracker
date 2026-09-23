@@ -73,14 +73,20 @@ Finder do. Reporting shared extents once is deferred.
 
 ## Gotchas
 
-- **Xcode 16 synchronized groups.** Adding or deleting a source file needs no
-  `project.pbxproj` edit.
+- **Xcode 16 synchronized groups — app sources only.** A file under
+  `DiskTracker/Sources/` needs no `project.pbxproj` edit. The test target is
+  not synchronized: a new file in `Tests/DiskTrackerTests/` needs a build-file,
+  file-reference, group and Sources-phase entry, or it silently never runs.
+- **`NSHomeDirectory()` is the sandbox container**, not `~`. Use
+  `ScopedAccess.realHome`, and reach it through `FolderPicker.homeFolder()` so
+  the one-time grant is requested and bookmarked.
 - **SF Symbol names are not validated at build time.** A wrong name renders a
   blank row. Several Material Design names survived from the HTML mock.
 - **Deferred code is gated, not deleted.** Five services sit behind
   `#if DISKTRACKER_V05` and compile to nothing in a normal build; `helper-tool/`
   is not in the Xcode project at all. Build them with
-  `./build-disk-tracker --v05`. A normal suite runs 349 tests, the gated one 376.
+  `./build-disk-tracker --v05`. The gated suite runs 27 more tests than a normal
+  one (350 and 377 at the time of writing).
 - **A passing test suite does not mean the code is reachable.** That gate exists
   because those services had full suites and zero callers, which reads as
   finished work.

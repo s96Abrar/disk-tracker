@@ -97,8 +97,8 @@ struct DashboardView: View {
                         .help("Select a directory to analyze")
 
                         Button {
-                            guard model.canStartNewScan else { return }
-                            model.startScan(path: NSHomeDirectory())
+                            guard model.canStartNewScan, let home = FolderPicker.homeFolder() else { return }
+                            model.startScan(path: home)
                         } label: {
                             Label("Scan Home", systemImage: "magnifyingglass")
                         }

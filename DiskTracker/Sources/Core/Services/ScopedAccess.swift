@@ -21,13 +21,22 @@ private let log = Logger(subsystem: "com.disktracker", category: "scoped-access"
 /// Persists and re-establishes access to user-chosen folders.
 enum ScopedAccess {
 
+    /// The user's real home folder. Inside the sandbox `NSHomeDirectory()` is
+    /// the app container, so anything meant for "home" uses this and a grant.
+    static let realHome: String = {
+        guard let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir else {
+            return NSHomeDirectory()
+        }
+        return String(cString: dir)
+    }()
+
     /// Bookmarks keyed by the path they were created for.
     private static let defaultsKey = "com.disktracker.scopedBookmarks"
 
     /// An active access grant. Access is released when this is deallocated, so
     /// callers keep it alive for as long as they touch the folder rather than
     /// having to remember a matching `stopAccessing` call.
-    final class Grant {
+    final class Grant: Sendable {
         private let url: URL
         fileprivate init(url: URL) { self.url = url }
         deinit { url.stopAccessingSecurityScopedResource() }
@@ -56,9 +65,8 @@ enum ScopedAccess {
     /// Re-establishes access to a previously chosen folder.
     ///
     /// Returns nil when there is no bookmark, which is the normal case for a
-    /// path the user reached some other way — a volume root, or the home
-    /// directory the app can already read. Callers scan regardless; the grant
-    /// only widens what is reachable.
+    /// path the user reached some other way, such as a volume root. Callers
+    /// scan regardless; the grant only widens what is reachable.
     static func access(path: String) -> Grant? {
         guard let data = storedBookmarks()[path] else { return nil }
 

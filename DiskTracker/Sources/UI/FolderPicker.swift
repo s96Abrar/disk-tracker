@@ -32,11 +32,21 @@ enum FolderPicker {
         return url
     }
 
-    /// Asks for the real home folder, which the developer-cache view needs.
+    /// The real home folder, asking for access the first time. Nil when the
+    /// user declines. Every "Home" shortcut goes through here.
+    @MainActor
+    static func homeFolder() -> String? {
+        if ScopedAccess.access(path: ScopedAccess.realHome) != nil || grantHomeAccess() {
+            return ScopedAccess.realHome
+        }
+        return nil
+    }
+
+    /// Asks for the real home folder.
     /// Returns false when the user cancels or picks another folder.
     @MainActor
     static func grantHomeAccess() -> Bool {
-        let home = URL(fileURLWithPath: DevCaches.realHome, isDirectory: true)
+        let home = URL(fileURLWithPath: ScopedAccess.realHome, isDirectory: true)
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -44,7 +54,7 @@ enum FolderPicker {
         panel.canCreateDirectories = false
         panel.directoryURL = home
         panel.title = "Allow Access to Home Folder"
-        panel.message = "Allow Disk Tracker to measure developer caches in your home folder"
+        panel.message = "Choose your home folder to let Disk Tracker scan it. You only need to do this once."
         panel.prompt = "Allow"
         guard panel.runModal() == .OK, let url = panel.url,
               url.standardizedFileURL.path == home.path else { return false }
