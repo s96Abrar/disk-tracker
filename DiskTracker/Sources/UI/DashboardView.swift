@@ -23,11 +23,15 @@ struct DashboardView: View {
     /// the Recent Scans card looked like a dead click whenever the dashboard
     /// already fit on screen.
     @State private var showingHistory = false
+    @State private var showingDevCaches = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                DashboardSidebar(model: model, onShowHistory: { showingHistory = true })
+                DashboardSidebar(
+                    model: model,
+                    onShowHistory: { showingHistory = true },
+                    onShowDevCaches: { showingDevCaches = true })
 
                 mainArea
             }
@@ -40,6 +44,9 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: $showingHistory) {
             ScanHistorySheet(model: model, onClose: { showingHistory = false })
+        }
+        .sheet(isPresented: $showingDevCaches) {
+            DevCachesSheet(model: model, onClose: { showingDevCaches = false })
         }
     }
 
