@@ -15,6 +15,9 @@ struct DashboardSidebar: View {
     /// Opens the scan history sheet.
     var onShowHistory: () -> Void
 
+    /// Opens the developer caches sheet.
+    var onShowDevCaches: () -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             title
@@ -96,6 +99,7 @@ struct DashboardSidebar: View {
             Divider().padding(.vertical, Spacing.xs)
 
             navRow(icon: "clock.arrow.circlepath", label: "History", action: onShowHistory)
+            navRow(icon: "hammer", label: "Developer Caches", action: onShowDevCaches)
 
             // SettingsLink, not a button that pokes `showSettingsWindow:` —
             // AppKit rejects that selector on macOS 14+ ("Please use

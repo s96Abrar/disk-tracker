@@ -32,6 +32,26 @@ enum FolderPicker {
         return url
     }
 
+    /// Asks for the real home folder, which the developer-cache view needs.
+    /// Returns false when the user cancels or picks another folder.
+    @MainActor
+    static func grantHomeAccess() -> Bool {
+        let home = URL(fileURLWithPath: DevCaches.realHome, isDirectory: true)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = home
+        panel.title = "Allow Access to Home Folder"
+        panel.message = "Allow Disk Tracker to measure developer caches in your home folder"
+        panel.prompt = "Allow"
+        guard panel.runModal() == .OK, let url = panel.url,
+              url.standardizedFileURL.path == home.path else { return false }
+        ScopedAccess.remember(url)
+        return true
+    }
+
     /// Prompts for where to write an export. Returns nil when the user cancels.
     ///
     /// Inside the sandbox the returned URL carries its own write grant for this
