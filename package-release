@@ -59,6 +59,10 @@ cargo build --release
 mkdir -p "$SWIFT_DIR/Binaries"
 cp "$RUST_DIR/target/release/disk-tracker-engine" "$SWIFT_DIR/Binaries/disk-tracker-engine"
 chmod +x "$SWIFT_DIR/Binaries/disk-tracker-engine"
+# Sandbox + inherit entitlements; Xcode re-signs on copy and keeps them.
+codesign --force --sign - --options runtime --identifier com.disktracker.app.engine \
+    --entitlements "$SWIFT_DIR/Resources/Engine.entitlements" \
+    "$SWIFT_DIR/Binaries/disk-tracker-engine"
 ok "Engine built and staged"
 
 # ── 2. Swift app ─────────────────────────────────────────────────────
@@ -77,7 +81,7 @@ ok "Built $APP"
 # ── 3. Verify the bundle ─────────────────────────────────────────────
 header "3/5  Bundle verification"
 
-ENGINE="$APP/Contents/Resources/disk-tracker-engine"
+ENGINE="$APP/Contents/MacOS/disk-tracker-engine"
 [[ -x "$ENGINE" ]] || fail "Engine missing from bundle. App Sandbox forbids launching anything outside the .app, so a scan would fail at runtime."
 ok "Engine bundled ($(du -h "$ENGINE" | cut -f1))"
 
@@ -106,6 +110,24 @@ grep -q "runtime" <<<"$SIGINFO" \
 codesign --verify --strict "$ENGINE" 2>/dev/null \
     && ok "Engine signature valid" \
     || fail "Engine signature invalid"
+
+# App Store rules, checked now so ad-hoc builds do not drift away from them.
+ENGINE_ENT="$(codesign -d --entitlements - --xml "$ENGINE" 2>/dev/null)"
+grep -q "security.inherit" <<<"$ENGINE_ENT" && grep -q "app-sandbox" <<<"$ENGINE_ENT" \
+    && ok "Engine entitlements: sandbox + inherit" \
+    || fail "Engine lacks sandbox + inherit entitlements — the App Store rejects an unsandboxed nested executable"
+
+APP_ENT="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)"
+! grep -q "get-task-allow" <<<"$APP_ENT" \
+    && ok "No get-task-allow (debugger attach) in Release" \
+    || fail "Release build carries get-task-allow"
+! grep -q "temporary-exception" <<<"$APP_ENT" \
+    && ok "No temporary-exception entitlements" \
+    || fail "temporary-exception entitlements are not App Store compatible — use NSOpenPanel + bookmarks"
+
+[[ -f "$APP/Contents/Resources/PrivacyInfo.xcprivacy" ]] \
+    && ok "Privacy manifest bundled" \
+    || fail "PrivacyInfo.xcprivacy missing from bundle"
 
 if codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "app-sandbox"; then
     ok "Sandbox entitlement present"
@@ -148,7 +170,7 @@ ok "Created $DMG ($(du -h "$DMG" | cut -f1))"
 header "5/5  DMG round-trip"
 MOUNT="$(mktemp -d)"
 hdiutil attach "$DMG" -mountpoint "$MOUNT" -nobrowse -quiet
-if [[ -d "$MOUNT/DiskTracker.app" ]] && [[ -x "$MOUNT/DiskTracker.app/Contents/Resources/disk-tracker-engine" ]]; then
+if [[ -d "$MOUNT/DiskTracker.app" ]] && [[ -x "$MOUNT/DiskTracker.app/Contents/MacOS/disk-tracker-engine" ]]; then
     codesign --verify --deep --strict "$MOUNT/DiskTracker.app" 2>/dev/null \
         && ok "Mounted app verifies — engine present, signature intact" \
         || warn "Mounted app failed signature verification"

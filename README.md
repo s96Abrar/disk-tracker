@@ -140,8 +140,9 @@ unused at 50,000 children.
          stdout: binary scan buffer · stderr: progress
 ```
 
-The engine ships at `Contents/Resources/disk-tracker-engine`. It has to live
-inside the bundle — the App Sandbox refuses to launch anything outside it.
+The engine ships at `Contents/MacOS/disk-tracker-engine`, signed with
+`app-sandbox` + `inherit` so it runs inside the app's sandbox. It has to live
+inside the bundle: the App Sandbox refuses to launch anything outside it.
 
 **Why a subprocess rather than an in-process FFI.** A traversal engine walks
 whatever a user points it at, so a crash on a malformed volume takes down a

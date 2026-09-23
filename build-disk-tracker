@@ -71,16 +71,20 @@ build_rust() {
     cargo build --release || exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
         log_ok "Rust engine built successfully"
-        # ponytail: copy binary into Resources/ so xcodebuild bundles it into the
-        # ceiling: manual copy. upgrade: packaging pipeline.
-        # .app. App Sandbox blocks Process from launching any executable outside
-        # the .app container.
+        # ponytail: stage the binary in Binaries/; Xcode copies it into
+        # Contents/MacOS. App Sandbox blocks Process from launching any
+        # executable outside the .app. ceiling: manual copy. upgrade: packaging
+        # pipeline.
         local src="$RUST_DIR/target/release/disk-tracker-engine"
         local dst_dir="$SWIFT_DIR/Binaries"
         local dst="$dst_dir/disk-tracker-engine"
         mkdir -p "$dst_dir"
         cp "$src" "$dst"
         chmod +x "$dst"
+        # Sandbox + inherit entitlements. Xcode re-signs on copy with the app's
+        # identity and keeps these.
+        codesign --force --sign - --options runtime --identifier com.disktracker.app.engine \
+            --entitlements "$SWIFT_DIR/Resources/Engine.entitlements" "$dst"
         log_ok "Bundled Rust binary at $dst"
     fi
 }

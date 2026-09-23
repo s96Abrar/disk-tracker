@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E1A6E0E0000000000000E003 /* disk-tracker-engine in Embed Engine */ = {isa = PBXBuildFile; fileRef = E1A6E0E0000000000000E001 /* disk-tracker-engine */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		096FEA52E28359A7D3D49705 /* SunburstViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A215C2FEEEE7254592D11B1B /* SunburstViewTests.swift */; };
 		AAD5C1D56B444C74B80975C1 /* CoverageGapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981F68BD405A4225B5AE48E7 /* CoverageGapTests.swift */; };
 		1E46D0126ED3454EA0049525 /* RenderBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29196528B96A418F846DB6B8 /* RenderBudgetTests.swift */; };
@@ -38,7 +39,22 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		E1A6E0E0000000000000E004 /* Embed Engine */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				E1A6E0E0000000000000E003 /* disk-tracker-engine in Embed Engine */,
+			);
+			name = "Embed Engine";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		E1A6E0E0000000000000E001 /* disk-tracker-engine */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "disk-tracker-engine"; sourceTree = "<group>"; };
 		1E8AB1E2D5AFE5850CDA2E9E /* AppBundleAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBundleAnalyzerTests.swift; sourceTree = "<group>"; };
 		276FD14D87CD60CCC59B7ECF /* DuplicateFinderServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicateFinderServiceTests.swift; sourceTree = "<group>"; };
 		51139339D19B43E1D5959BAB /* BackgroundScanSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundScanSchedulerTests.swift; sourceTree = "<group>"; };
@@ -68,14 +84,17 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
-		7589DD583018315600777228 /* Binaries */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Binaries;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXGroup section */
+		E1A6E0E0000000000000E002 /* Binaries */ = {
+			isa = PBXGroup;
+			children = (
+				E1A6E0E0000000000000E001 /* disk-tracker-engine */,
+			);
+			path = Binaries;
+			sourceTree = "<group>";
+		};
 		6EF0D0EAF9F1DD395C4797E3 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -96,7 +115,7 @@
 		762E273004813C5F3A21025C = {
 			isa = PBXGroup;
 			children = (
-				7589DD583018315600777228 /* Binaries */,
+				E1A6E0E0000000000000E002 /* Binaries */,
 				7589DD3D3018314F00777228 /* Sources */,
 				74EB0AC1FAEB5D0CB04742C5 /* Tests */,
 				6EF0D0EAF9F1DD395C4797E3 /* Products */,
@@ -138,6 +157,7 @@
 			buildPhases = (
 				6AE2A0C52D4E099ACC324DAA /* Sources */,
 				2A765037CFF50DF8B2CBD617 /* Resources */,
+				E1A6E0E0000000000000E004 /* Embed Engine */,
 			);
 			buildRules = (
 			);
@@ -145,7 +165,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				7589DD3D3018314F00777228 /* Sources */,
-				7589DD583018315600777228 /* Binaries */,
 			);
 			name = DiskTracker;
 			packageProductDependencies = (
@@ -432,6 +451,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/DiskTracker.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
