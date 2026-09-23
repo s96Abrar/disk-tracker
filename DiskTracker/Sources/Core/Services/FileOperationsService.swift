@@ -23,14 +23,20 @@ final class FileOperationsService: @unchecked Sendable {
     // Singleton
     static let shared = FileOperationsService()
 
-    /// Paths that are protected from deletion/modification.
+    /// Paths that are protected from deletion/modification. Every `Library`
+    /// folder is protected by name as well, below.
     private let protectedPaths: Set<String> = [
         "/", "/System", "/usr", "/bin", "/sbin", "/lib", "/lib64",
         "/opt", "/private", "/dev", "/Volumes", "/Network",
-        "/Applications", "/Library", "/Users/Guest",
-        "/System/Library", "/System/Volumes",
-        NSHomeDirectory() + "/Library",
+        "/Applications", "/Users/Guest", "/System/Volumes",
     ]
+
+    /// The app's own sandbox container. It sits under ~/Library but holds only
+    /// this app's data, so the Library rule does not apply to it. Nil when not
+    /// sandboxed: there `NSHomeDirectory()` is the real home, and exempting it
+    /// would unprotect ~/Library.
+    private let ownContainer: String? =
+        NSHomeDirectory() == ScopedAccess.realHome ? nil : NSHomeDirectory()
 
     // MARK: - System Path Protection
 
@@ -45,7 +51,15 @@ final class FileOperationsService: @unchecked Sendable {
                 return true
             }
         }
-        return false
+
+        // Nothing in or under any Library folder — ~/Library, /Library, or one
+        // nested anywhere. Apps keep live state there; the user deletes it in
+        // Finder if they are sure. Case-insensitive, like the default volume.
+        if let own = ownContainer, path == own || path.hasPrefix(own + "/") {
+            return false
+        }
+        return URL(fileURLWithPath: path).pathComponents
+            .contains { $0.caseInsensitiveCompare("Library") == .orderedSame }
     }
 
     // MARK: - Trash / Deletion

@@ -80,6 +80,13 @@ Finder do. Reporting shared extents once is deferred.
 - **`NSHomeDirectory()` is the sandbox container**, not `~`. Use
   `ScopedAccess.realHome`, and reach it through `FolderPicker.homeFolder()` so
   the one-time grant is requested and bookmarked.
+- **Nothing inside a `Library` folder goes to Trash.** `FileOperationsService`
+  refuses any path with a `Library` component, at any depth. The app's own
+  container is the one exception. Such items are measured only; the UI points
+  to Finder.
+- **Hosted tests do not enforce the App Sandbox** the way a normal launch does:
+  from the test host the engine reads `~/.gradle`, which the real app cannot.
+  Prove sandbox behavior in the launched app (`sandbox_check` on its pid).
 - **SF Symbol names are not validated at build time.** A wrong name renders a
   blank row. Several Material Design names survived from the HTML mock.
 - **Deferred code is gated, not deleted.** Five services sit behind
