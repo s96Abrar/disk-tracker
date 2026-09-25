@@ -26,7 +26,7 @@ concurrency:
 jobs:
   rust:
     name: Rust engine
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -55,13 +55,13 @@ jobs:
 
   swift:
     name: Swift app
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
       - name: Cache cargo
         uses: actions/cache@v6
@@ -101,13 +101,13 @@ jobs:
 
   deferred:
     name: Deferred v0.5 code
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -137,13 +137,13 @@ jobs:
   bundle:
     name: Release bundle
     if: inputs.run_release_build
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
       # Same script the release workflow and local packaging use, so a green
       # run here means the release will build.

@@ -1,3 +1,46 @@
+# Disk Tracker v0.1.2 — Find the 40 GB you forgot about
+
+## What's new in v0.1.2
+
+**Developer Caches.** A new sidebar entry that measures the caches your dev tools leave behind — Xcode (DerivedData, device support, archives), the Simulator, Homebrew, npm/Yarn/pnpm, pip, Cargo, Gradle and Android — with one bar showing which tool takes the most. The caches in your home folder's hidden folders (npm, Cargo, Gradle, Android) can go straight to the Trash; for the rest, each row shows the tool's own cleanup command, ready to copy. It asks once for access to your home folder.
+
+**A new icon for macOS 26.** The icon is now a Liquid Glass icon that follows macOS 26's light, dark, clear and tinted styles. macOS 15 gets the same design, flattened.
+
+**Fixes.**
+- **Home** now scans your home folder. It used to scan the app's own sandbox folder instead.
+- Move to Trash works on scans reopened from History after a restart.
+- Nothing inside a **Library** folder can be moved to the Trash any more — apps keep live data there. Those items point you to Show in Finder instead.
+- When macOS won't let the app delete from a folder you didn't choose, the message now says how to fix it: open the folder with **Choose Folder…**.
+- In full screen, the sidebar stays at the left edge instead of drifting toward the middle.
+- The welcome screen no longer draws a second, fake window inside the real one.
+- Scans no longer wait behind low-priority background work.
+
+**Privacy and security.**
+- Release builds no longer allow a debugger to attach to the app. Earlier builds did.
+- The scan engine is now sandboxed in its own right and runs inside the app's sandbox.
+- A privacy manifest and a [privacy policy](https://github.com/s96Abrar/disk-tracker/blob/main/PRIVACY.md): nothing leaves your Mac.
+
+## Installing
+
+1. Open `DiskTracker-v0.1.2.dmg` and drag **Disk Tracker** to Applications.
+2. Run this once in Terminal:
+   ```
+   xattr -dr com.apple.quarantine /Applications/DiskTracker.app
+   ```
+3. Open it normally.
+
+Step 2 is required because this build is **ad-hoc signed rather than
+notarized** — Apple notarization needs a paid Developer Program membership.
+The command clears the "downloaded from the internet" flag on this app only;
+it does not disable Gatekeeper system-wide, and the signature stays valid.
+
+> Right-click → Open does **not** work for ad-hoc signed apps on Apple
+> Silicon. The `xattr` command is required.
+
+**Requires macOS 15.0 or later.**
+
+---
+
 # Disk Tracker v0.1.1 — Find the 40 GB you forgot about
 
 ## What's new in v0.1.1
