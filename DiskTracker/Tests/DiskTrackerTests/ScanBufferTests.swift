@@ -380,9 +380,8 @@ final class ScanBufferTreeTests: XCTestCase {
     }
 
     /// The engine the app actually launches, from Contents/MacOS. Catches a
-    /// wrong location or an unlaunchable binary. It does not prove the inherit
-    /// entitlement: the test host does not enforce the sandbox the way a
-    /// normally launched app does, so `package-release` checks that instead.
+    /// wrong location, an unlaunchable binary, and an engine signed with the
+    /// sandbox entitlement but without inherit (verified: it fails then).
     func testBundledEngineScansFromInsideTheApp() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("bundled-engine-\(UUID().uuidString)")
@@ -395,5 +394,38 @@ final class ScanBufferTreeTests: XCTestCase {
             "Bundled engine did not run — check Contents/MacOS and its entitlements"
         )
         XCTAssertEqual(root.children?.map(\.name), ["a.txt"])
+    }
+
+    /// The stderr reader is waited on with a semaphore, which cannot lend the
+    /// waiter its priority, so it must run at the caller's QoS — a lower class
+    /// is a priority inversion. Progress callbacks run on that reader.
+    func testProgressArrivesAtTheCallersQoS() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("qos-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(count: 16).write(to: dir.appendingPathComponent("a.txt"))
+
+        final class Seen: @unchecked Sendable {
+            private let lock = NSLock()
+            private var classes: [qos_class_t] = []
+            func add(_ qos: qos_class_t) { lock.lock(); classes.append(qos); lock.unlock() }
+            var all: [qos_class_t] { lock.lock(); defer { lock.unlock() }; return classes }
+        }
+        let seen = Seen()
+        // Called from a user-initiated task, as Developer Caches does. Before
+        // the fix the reader ran at utility (17) instead of 25.
+        let done = expectation(description: "scan")
+        let path = dir.path
+        Task.detached(priority: .userInitiated) {
+            _ = DirectoryScannerBridge().scan(path: path, config: ScanConfig()) { _ in
+                seen.add(qos_class_self())
+            }
+            done.fulfill()
+        }
+        await fulfillment(of: [done], timeout: 30)
+
+        XCTAssertFalse(seen.all.isEmpty, "engine sent no progress line")
+        XCTAssertEqual(Set(seen.all.map(\.rawValue)), [QOS_CLASS_USER_INITIATED.rawValue])
     }
 }
