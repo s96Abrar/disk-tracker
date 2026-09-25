@@ -36,6 +36,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Resources/DiskTracker.entitlements
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
         COMBINE_HIDPI_IMAGES: YES
+        # package-release overrides this with the commit count.
+        CURRENT_PROJECT_VERSION: 1
       configs:
         # Xcode otherwise injects get-task-allow (debugger attach) into
         # Release too; only an App Store export would strip it.
