@@ -18,6 +18,8 @@ app.
 
 A scan of a million files takes **1.8 seconds** and **164 MB** of memory.
 
+![Sunburst view of a scanned folder, with a folder hovered](docs/screenshots/sunburst.png)
+
 > **v0.1 is the first shareable build.** It does local disks only. Network
 > volumes, drive health, APFS snapshot management and background scanning are
 > deliberately out of scope — see [Roadmap](#roadmap).
@@ -63,6 +65,8 @@ signature stays intact and verifiable.
 | **Export** | The whole tree as JSON or CSV. |
 | **Watch** | Live free-space readout, with a warning banner at a threshold you choose. |
 | **Revisit** | Past scans re-open from history without re-scanning the disk. |
+
+![Developer Caches: cache sizes per tool, with each tool's cleanup command](docs/screenshots/developer-caches.png)
 
 ### What it deliberately does not do
 
