@@ -39,7 +39,7 @@ Canvas-based visualizations and owns file operations.
 ./build-disk-tracker --swift
 ./build-disk-tracker --clean
 
-./make-icon                    # redraws the app icon asset catalog from code
+./make-icon                    # writes the Liquid Glass AppIcon.icon from code
 
 cd traversal-engine && cargo test --release
 xcodebuild test -project DiskTracker/DiskTracker.xcodeproj \

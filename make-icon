@@ -1,38 +1,35 @@
 #!/usr/bin/env swift
 //
-//  make-icon — Render the Disk Tracker app icon into the asset catalog
+//  make-icon — Write the Disk Tracker app icon as an Icon Composer document
 //
 //  Usage:
 //    ./make-icon
 //
-//  The icon is drawn, not painted: a squircle in the brand indigo with a
-//  treemap of blocks on it, which is what the app actually shows you. Every
-//  size is rendered from the same vector code rather than downsampled from
-//  1024, so the 16pt one stays crisp.
+//  The icon is drawn, not painted: the brand indigo with a treemap of blocks
+//  on it, which is what the app actually shows you. It is an Icon Composer
+//  `.icon` (macOS 26 Liquid Glass): a gradient fill plus two layer groups. The
+//  system supplies the squircle, glass, specular highlights and shadow, and
+//  derives the dark, clear and tinted appearances. Xcode also compiles it into
+//  a classic AppIcon.icns for macOS 15.
 //
-//  Output: DiskTracker/Sources/Assets.xcassets/AppIcon.appiconset/
-//  Sources/ is a synchronized group, so Xcode picks the catalog up with no
-//  project file edit.
+//  Output:
+//    DiskTracker/Sources/AppIcon.icon/   icon.json + Assets/*.svg
+//    docs/icon.png                        256px preview for the README
+//  Sources/ is a synchronized group, so Xcode picks the icon up with no project
+//  file edit. The preview needs ictool, which ships inside Xcode's Icon Composer.
 //
 
 import CoreGraphics
 import Foundation
-import ImageIO
-import UniformTypeIdentifiers
 
 // ── Design ───────────────────────────────────────────────────────────
-// All measurements are fractions of the canvas, so one draw call serves
-// every size.
+// All measurements are fractions of the icon shape: the system masks the
+// canvas to the squircle, so the canvas edge is the shape edge.
 
-/// The macOS icon grid leaves the outer ~10% empty; a full-bleed square
-/// looks oversized next to every other icon in the Dock.
-let shapeInset = 0.098
-/// Superellipse exponent. 5 is close to the system's continuous corner;
-/// a plain rounded rect reads subtly wrong at 512pt and up.
-let squircleN = 5.0
-let blockInset = 0.14      // treemap padding inside the squircle
-let blockGap = 0.022       // gutter between blocks, in canvas fractions
-let blockRadius = 0.018
+let canvas = 1024.0
+let blockInset = 0.174     // treemap padding inside the shape
+let blockGap = 0.0274      // gutter between blocks
+let blockRadius = 0.0224
 
 typealias RGBA = (r: Double, g: Double, b: Double, a: Double)
 
@@ -42,159 +39,95 @@ let gradientBottom: RGBA = (0.247, 0.239, 0.722, 1)  // #3F3DB8
 /// x, y, width, height in the treemap's unit square (y grows downward),
 /// then the block's fill. One squarified split, the same shape the
 /// treemap view produces for a real folder.
-let blocks: [(CGRect, RGBA)] = [
+let tiles: [(CGRect, RGBA)] = [
     (CGRect(x: 0.00, y: 0.00, width: 0.56, height: 0.60), (1, 1, 1, 0.97)),
     (CGRect(x: 0.56, y: 0.00, width: 0.44, height: 0.34), (1, 1, 1, 0.70)),
     (CGRect(x: 0.56, y: 0.34, width: 0.44, height: 0.26), (1, 1, 1, 0.46)),
     (CGRect(x: 0.00, y: 0.60, width: 0.34, height: 0.40), (1, 1, 1, 0.58)),
-    // The one block that is not white: reclaimable space, in the same
-    // green the app uses for a healthy volume (#42E355).
-    (CGRect(x: 0.34, y: 0.60, width: 0.30, height: 0.40), (0.259, 0.890, 0.333, 0.95)),
     (CGRect(x: 0.64, y: 0.60, width: 0.36, height: 0.40), (1, 1, 1, 0.36)),
 ]
+/// The one block that is not white: reclaimable space, in the same green the
+/// app uses for a healthy volume (#42E355). Its own group, so it sits above
+/// the others in the glass stack.
+let reclaim: (CGRect, RGBA) =
+    (CGRect(x: 0.34, y: 0.60, width: 0.30, height: 0.40), (0.259, 0.890, 0.333, 1))
 
-// ── Drawing ──────────────────────────────────────────────────────────
+// ── SVG layers ───────────────────────────────────────────────────────
 
-/// Superellipse centred in `rect`. |x/a|^n + |y/b|^n = 1.
-func squirclePath(in rect: CGRect, n: Double) -> CGPath {
-    let path = CGMutablePath()
-    let (a, b) = (rect.width / 2, rect.height / 2)
-    let (cx, cy) = (rect.midX, rect.midY)
-    let steps = 720
-    for i in 0...steps {
-        let t = 2 * Double.pi * Double(i) / Double(steps)
-        let (c, s) = (cos(t), sin(t))
-        let x = cx + a * copysign(pow(abs(c), 2 / n), c)
-        let y = cy + b * copysign(pow(abs(s), 2 / n), s)
-        i == 0 ? path.move(to: CGPoint(x: x, y: y)) : path.addLine(to: CGPoint(x: x, y: y))
+func svg(_ blocks: [(CGRect, RGBA)]) -> String {
+    let field = canvas * (1 - 2 * blockInset)
+    let origin = canvas * blockInset
+    let gap = canvas * blockGap
+    let radius = canvas * blockRadius
+    let rects = blocks.map { unit, c in
+        let hex = String(format: "#%02X%02X%02X",
+                         Int((c.r * 255).rounded()), Int((c.g * 255).rounded()), Int((c.b * 255).rounded()))
+        return String(format: #"<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="%.1f" fill="%@" fill-opacity="%.2f"/>"#,
+                      origin + unit.minX * field + gap / 2, origin + unit.minY * field + gap / 2,
+                      unit.width * field - gap, unit.height * field - gap, radius, hex, c.a)
     }
-    path.closeSubpath()
-    return path
+    return #"<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">"#
+        + rects.joined() + "</svg>\n"
 }
 
-func color(_ c: RGBA) -> CGColor {
-    CGColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
+func color(_ c: RGBA) -> String {
+    String(format: "srgb:%.5f,%.5f,%.5f,%.5f", c.r, c.g, c.b, c.a)
 }
 
-func drawIcon(size: Int) -> CGImage? {
-    let s = CGFloat(size)
-    guard let ctx = CGContext(
-        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    ) else { return nil }
-
-    ctx.setAllowsAntialiasing(true)
-    ctx.interpolationQuality = .high
-
-    let inset = s * CGFloat(shapeInset)
-    let shape = CGRect(x: inset, y: inset, width: s - inset * 2, height: s - inset * 2)
-    let path = squirclePath(in: shape, n: squircleN)
-
-    // Ambient shadow. Skipped below 64pt, where it is one grey pixel of mud.
-    if size >= 64 {
-        ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012),
-                      blur: s * 0.022,
-                      color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.28))
-        ctx.setFillColor(color(gradientBottom))
-        ctx.addPath(path)
-        ctx.fillPath()
-        ctx.restoreGState()
-    }
-
-    ctx.saveGState()
-    ctx.addPath(path)
-    ctx.clip()
-
-    let gradient = CGGradient(
-        colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
-        colors: [color(gradientTop), color(gradientBottom)] as CFArray,
-        locations: [0, 1]
-    )!
-    // Top-left to bottom-right; CoreGraphics' origin is bottom-left.
-    ctx.drawLinearGradient(gradient,
-                           start: CGPoint(x: shape.minX, y: shape.maxY),
-                           end: CGPoint(x: shape.maxX, y: shape.minY),
-                           options: [])
-
-    // Treemap.
-    let field = shape.insetBy(dx: s * CGFloat(blockInset), dy: s * CGFloat(blockInset))
-    let gap = s * CGFloat(blockGap)
-    let radius = max(s * CGFloat(blockRadius), 0.5)
-    for (unit, fill) in blocks {
-        let rect = CGRect(
-            x: field.minX + unit.minX * field.width + gap / 2,
-            // Flip: block coordinates read top-down, the context is bottom-up.
-            y: field.minY + (1 - unit.maxY) * field.height + gap / 2,
-            width: unit.width * field.width - gap,
-            height: unit.height * field.height - gap
-        )
-        ctx.setFillColor(color(fill))
-        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
-        ctx.fillPath()
-    }
-
-    ctx.restoreGState()
-    return ctx.makeImage()
+func group(_ image: String) -> [String: Any] {
+    [
+        "layers": [["image-name": "\(image).svg", "name": image, "glass": true]],
+        "shadow": ["kind": "neutral", "opacity": 0.5],
+        "translucency": ["enabled": true, "value": NSDecimalNumber(string: "0.3")] as [String: Any],
+    ]
 }
 
-// ── Catalog ──────────────────────────────────────────────────────────
-
-/// (point size, scale) — the ten images a macOS app icon set requires.
-let variants: [(Int, Int)] = [
-    (16, 1), (16, 2), (32, 1), (32, 2), (128, 1),
-    (128, 2), (256, 1), (256, 2), (512, 1), (512, 2),
+// Top-left to bottom-right, the same direction as the old drawn gradient.
+// Groups are listed front to back.
+let document: [String: Any] = [
+    "fill": [
+        "linear-gradient": [color(gradientTop), color(gradientBottom)],
+        "orientation": ["start": ["x": 0, "y": 0], "stop": ["x": 1, "y": 1]],
+    ],
+    "groups": [group("reclaim"), group("tiles")],
+    "supported-platforms": ["squares": ["macOS"]],
 ]
+
+// ── Write ────────────────────────────────────────────────────────────
 
 let root = URL(fileURLWithPath: CommandLine.arguments[0])
     .resolvingSymlinksInPath()
     .deletingLastPathComponent()
-let outDir = root
-    .appendingPathComponent("DiskTracker/Sources/Assets.xcassets/AppIcon.appiconset")
+let iconDir = root.appendingPathComponent("DiskTracker/Sources/AppIcon.icon")
+let assets = iconDir.appendingPathComponent("Assets")
 
-try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+try? FileManager.default.removeItem(at: iconDir)
+try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+try svg(tiles).write(to: assets.appendingPathComponent("tiles.svg"), atomically: true, encoding: .utf8)
+try svg([reclaim]).write(to: assets.appendingPathComponent("reclaim.svg"), atomically: true, encoding: .utf8)
+try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+    .write(to: iconDir.appendingPathComponent("icon.json"))
+print("Wrote \(iconDir.path)")
 
-var images: [[String: String]] = []
-for (points, scale) in variants {
-    let pixels = points * scale
-    let name = "icon_\(points)x\(points)\(scale == 2 ? "@2x" : "").png"
-    guard let image = drawIcon(size: pixels) else {
-        FileHandle.standardError.write("failed to render \(name)\n".data(using: .utf8)!)
-        exit(1)
-    }
-    let url = outDir.appendingPathComponent(name)
-    guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-        FileHandle.standardError.write("cannot write \(url.path)\n".data(using: .utf8)!)
-        exit(1)
-    }
-    CGImageDestinationAddImage(dest, image, nil)
-    guard CGImageDestinationFinalize(dest) else {
-        FileHandle.standardError.write("cannot finalize \(url.path)\n".data(using: .utf8)!)
-        exit(1)
-    }
-    images.append([
-        "filename": name,
-        "idiom": "mac",
-        "scale": "\(scale)x",
-        "size": "\(points)x\(points)",
-    ])
-    print("  \(name)  \(pixels)x\(pixels)")
+// ── README preview ───────────────────────────────────────────────────
+
+let ictool = "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool"
+let preview = root.appendingPathComponent("docs/icon.png")
+let render = Process()
+render.executableURL = URL(fileURLWithPath: ictool)
+render.arguments = [iconDir.path, "--export-image", "--output-file", preview.path,
+                    "--platform", "macOS", "--rendition", "Default",
+                    "--width", "256", "--height", "256", "--scale", "1"]
+render.standardOutput = FileHandle.nullDevice
+do {
+    try render.run()
+    render.waitUntilExit()
+} catch {
+    FileHandle.standardError.write("ictool not found — preview skipped (\(error.localizedDescription))\n".data(using: .utf8)!)
+    exit(1)
 }
-
-let contents: [String: Any] = [
-    "images": images,
-    "info": ["author": "xcode", "version": 1],
-]
-let json = try JSONSerialization.data(withJSONObject: contents, options: [.prettyPrinted, .sortedKeys])
-try json.write(to: outDir.appendingPathComponent("Contents.json"))
-
-// An asset catalog needs a root Contents.json or Xcode ignores the folder.
-let catalogRoot = outDir.deletingLastPathComponent()
-let rootContents = try JSONSerialization.data(
-    withJSONObject: ["info": ["author": "xcode", "version": 1]],
-    options: [.prettyPrinted, .sortedKeys]
-)
-try rootContents.write(to: catalogRoot.appendingPathComponent("Contents.json"))
-
-print("\nWrote \(variants.count) images to \(outDir.path)")
+guard render.terminationStatus == 0 else {
+    FileHandle.standardError.write("ictool failed to render the preview\n".data(using: .utf8)!)
+    exit(1)
+}
+print("Wrote \(preview.path)")
