@@ -31,42 +31,29 @@ struct OnboardingView: View {
     var onGoToDashboard: () -> Void
 
     var body: some View {
+        // The content sits in the real window. The HTML mock drew a second,
+        // fake window here — traffic lights and dead toolbar icons included —
+        // which showed as a window inside a window.
         ZStack {
-            // Background — matches the mock's subtle diagonal gradient.
             backgroundGradient
 
-            // Centered macOS-flavoured card window.
             VStack(spacing: 0) {
-                // Decorative title bar with traffic-light dots.
-                titleBar
-
-                Divider().opacity(0.3)
-
-                // Main content.
-                ScrollView {
-                    VStack(spacing: Spacing.xl) {
-                        header
-                        featuresBento
-                        actions
+                // Centred in a tall window, scrollable in a short one.
+                GeometryReader { viewport in
+                    ScrollView {
+                        VStack(spacing: Spacing.xl) {
+                            header
+                            featuresBento
+                            actions
+                        }
+                        .padding(Spacing.xl)
+                        .frame(maxWidth: 760)
+                        .frame(maxWidth: .infinity, minHeight: viewport.size.height)
                     }
-                    .padding(.horizontal, Spacing.xl)
-                    .padding(.vertical, Spacing.xl)
                 }
-
-                Divider().opacity(0.3)
 
                 footer
             }
-            .frame(width: 900, height: 600)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.regularMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-            )
-            .shadow(color: .black.opacity(0.5), radius: 25, x: 0, y: 12)
         }
         .frame(minWidth: 900, minHeight: 600)
         .preferredColorScheme(.dark)
@@ -88,30 +75,6 @@ struct OnboardingView: View {
             endPoint: .bottomTrailing
         )
         .ignoresSafeArea()
-    }
-
-    private var titleBar: some View {
-        HStack {
-            // Traffic-light dots — purely decorative in onboarding context.
-            HStack(spacing: 8) {
-                Circle().fill(Color(red: 1.0, green: 0.37, blue: 0.34)).frame(width: 12, height: 12)
-                Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18)).frame(width: 12, height: 12)
-                Circle().fill(Color(red: 0.16, green: 0.78, blue: 0.25)).frame(width: 12, height: 12)
-            }
-            .padding(.leading, Spacing.md)
-
-            Spacer()
-
-            HStack(spacing: Spacing.md) {
-                Image(systemName: "sidebar.left")
-                Image(systemName: "gear")
-            }
-            .font(.system(size: 14))
-            .foregroundStyle(.secondary)
-            .padding(.trailing, Spacing.md)
-        }
-        .frame(height: 44)
-        .background(Color.clear)
     }
 
     private var header: some View {
