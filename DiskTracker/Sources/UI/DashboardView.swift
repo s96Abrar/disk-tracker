@@ -59,7 +59,11 @@ struct DashboardView: View {
                 grid
             }
             .padding(Spacing.lg)
-            .frame(maxWidth: 760)
+            .frame(maxWidth: 760, alignment: .leading)
+            // Fill the rest of the window. Without this the HStack is only as
+            // wide as the sidebar plus 760pt, and a wider window — full
+            // screen especially — centres the pair, stranding the sidebar.
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

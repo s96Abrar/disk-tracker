@@ -19,6 +19,7 @@
 		BE68D409D5975D2DBE206259 /* SmartFilterServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B1C0D05617B5840C4E7AC9B /* SmartFilterServiceTests.swift */; };
 		C7C0290ACAB5DA4DD53AE45F /* BackgroundScanSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51139339D19B43E1D5959BAB /* BackgroundScanSchedulerTests.swift */; };
 		CE8EF8A3472447A2A2F28E75 /* ScanBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49683D5AE36945A0837F4353 /* ScanBufferTests.swift */; };
+		D3C0CAC4E5000000000000B3 /* DashboardLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3C0CAC4E5000000000000F3 /* DashboardLayoutTests.swift */; };
 		D3C0CAC4E5000000000000B1 /* DevCachesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3C0CAC4E5000000000000F1 /* DevCachesTests.swift */; };
 		DB57D349559AE5CDAB42C96C /* TreemapViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F871CC754708D23CAD454BB6 /* TreemapViewTests.swift */; };
 		E1A6E0E0000000000000E003 /* disk-tracker-engine in Embed Engine */ = {isa = PBXBuildFile; fileRef = E1A6E0E0000000000000E001 /* disk-tracker-engine */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -71,6 +72,7 @@
 		B764A3C64B2CFCE8183F5F55 /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
 		C93FFFB112A6AE5F2D68B29C /* DiskTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DiskTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA8F4F2DC4D6FB162935F9F8 /* FileOperationsServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperationsServiceTests.swift; sourceTree = "<group>"; };
+		D3C0CAC4E5000000000000F3 /* DashboardLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardLayoutTests.swift; sourceTree = "<group>"; };
 		D3C0CAC4E5000000000000F1 /* DevCachesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevCachesTests.swift; sourceTree = "<group>"; };
 		D67005DDAA65B91DEF316AAB /* DiskTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DiskTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1A6E0E0000000000000E001 /* disk-tracker-engine */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "disk-tracker-engine"; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 				8BA208F381CA1B6629E2524A /* DiskNodeTests.swift */,
 				276FD14D87CD60CCC59B7ECF /* DuplicateFinderServiceTests.swift */,
 				926D06FEDB9964D973033FF4 /* ExportServiceTests.swift */,
+				D3C0CAC4E5000000000000F3 /* DashboardLayoutTests.swift */,
 				D3C0CAC4E5000000000000F1 /* DevCachesTests.swift */,
 				CA8F4F2DC4D6FB162935F9F8 /* FileOperationsServiceTests.swift */,
 				F436027826EB4101B77F48BC /* NetworkVolumeScannerTests.swift */,
@@ -258,6 +261,7 @@
 				4AC8492CCB5CC3E9F61B4866 /* DiskNodeTests.swift in Sources */,
 				7A0A5C44DBE7728E6CC33B46 /* DuplicateFinderServiceTests.swift in Sources */,
 				55E60C31195442C3A14C4D17 /* ExportServiceTests.swift in Sources */,
+				D3C0CAC4E5000000000000B3 /* DashboardLayoutTests.swift in Sources */,
 				D3C0CAC4E5000000000000B1 /* DevCachesTests.swift in Sources */,
 				6266485EBD4D76972A64A75D /* FileOperationsServiceTests.swift in Sources */,
 				F464A25153AC80A3D2882E37 /* NetworkVolumeScannerTests.swift in Sources */,
