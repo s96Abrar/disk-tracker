@@ -66,13 +66,29 @@ or a list. Find the large, old and duplicate files, then move them to the Trash.
 > Developer Caches (sidebar) asks once for the home folder and then lists cache
 > sizes.
 
-## Screenshots (to capture)
+## Screenshots
 
-Mac screenshots must be 16:10 at one of 1280×800, 1440×900, 2560×1600 or
-2880×1800. Up to ten; the first three matter most.
+Upload-ready in [`app-store/screenshots/`](app-store/screenshots/), in listing
+order. The first three show in search results.
 
-1. Sunburst of a home-folder scan, a large folder hovered.
-2. Treemap of the same scan.
-3. Smart filter "Large files" with a batch selected and the reclaim total.
-4. Developer Caches sheet.
-5. Dashboard with volumes and recent scans.
+| File | View |
+|---|---|
+| `01-sunburst.png` | Sunburst of a scan, a folder hovered |
+| `02-treemap.png` | Treemap of the same scan |
+| `03-list.png` | List view |
+| `04-developer-caches.png` | Developer Caches sheet |
+| `05-dashboard.png` | Dashboard |
+| `06-welcome.png` | Welcome screen |
+
+All are 2880×1800 (16:10, one of Apple's accepted Mac sizes: 1280×800,
+1440×900, 2560×1600, 2880×1800), RGB, no transparency.
+
+**How they were made.** A window capture (⌘⇧4, Space, click) is the window
+plus a transparent shadow. The window alone is almost exactly 16:10, so each
+was cropped to the window, its rounded corners filled with the window's own
+edge colour, trimmed a few pixels at the bottom to exactly 16:10, and scaled to
+2880×1800. No background is added.
+
+**Before retaking:** dismiss the low-space banner, and scan a folder whose
+names are safe to publish. Every image was OCR-checked for personal names and
+home paths before it was committed.
