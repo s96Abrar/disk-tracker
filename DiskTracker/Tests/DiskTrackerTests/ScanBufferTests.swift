@@ -378,4 +378,22 @@ final class ScanBufferTreeTests: XCTestCase {
         XCTAssertEqual(empty.totalPhysicalSize, 0)
         XCTAssertEqual(empty.children?.count, 0)
     }
+
+    /// The engine the app actually launches, from Contents/MacOS. Catches a
+    /// wrong location or an unlaunchable binary. It does not prove the inherit
+    /// entitlement: the test host does not enforce the sandbox the way a
+    /// normally launched app does, so `package-release` checks that instead.
+    func testBundledEngineScansFromInsideTheApp() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bundled-engine-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(repeating: 0x41, count: 4096).write(to: dir.appendingPathComponent("a.txt"))
+
+        let root = try XCTUnwrap(
+            DirectoryScannerBridge().scan(path: dir.path, config: ScanConfig()),
+            "Bundled engine did not run — check Contents/MacOS and its entitlements"
+        )
+        XCTAssertEqual(root.children?.map(\.name), ["a.txt"])
+    }
 }

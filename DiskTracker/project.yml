@@ -23,7 +23,10 @@ targets:
         type: group
       - path: Binaries/disk-tracker-engine
         type: file
-        buildPhase: resources
+        buildPhase:
+          copyFiles:
+            destination: executables
+        attributes: [CodeSignOnCopy]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.disktracker.app
@@ -33,6 +36,11 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Resources/DiskTracker.entitlements
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
         COMBINE_HIDPI_IMAGES: YES
+      configs:
+        # Xcode otherwise injects get-task-allow (debugger attach) into
+        # Release too; only an App Store export would strip it.
+        Release:
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
   DiskTrackerTests:
     type: bundle.unit-test

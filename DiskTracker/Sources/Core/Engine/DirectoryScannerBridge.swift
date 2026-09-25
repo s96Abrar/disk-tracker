@@ -49,12 +49,10 @@ final class DirectoryScannerBridge: @unchecked Sendable {
     private let rustBinary: URL
 
     init() {
-        var bundlePath: URL?
-        if let resURL = Bundle.main.resourceURL {
-            bundlePath = resURL.appendingPathComponent("disk-tracker-engine")
-        }
-        let candidates = [bundlePath].compactMap { $0 }
-        self.rustBinary = candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? candidates[0]
+        // Contents/MacOS, next to the app's own executable: code does not
+        // belong in Resources, and the App Store rejects it there.
+        self.rustBinary = Bundle.main.url(forAuxiliaryExecutable: "disk-tracker-engine")
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/disk-tracker-engine")
         log.info("binary \(self.rustBinary.path, privacy: .public)")
     }
 

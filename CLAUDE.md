@@ -17,7 +17,7 @@ Canvas-based visualizations and owns file operations.
 |-----------|----------|---------|
 | Rust scanner | `traversal-engine/src/` | Traversal, `FileRecord` array |
 | Swift app | `DiskTracker/Sources/` | GUI, file operations |
-| Engine binary | `Contents/Resources/disk-tracker-engine` | Sandbox forbids launching anything outside the bundle |
+| Engine binary | `Contents/MacOS/disk-tracker-engine` | Sandbox forbids launching anything outside the bundle; signed sandbox + inherit |
 
 **Performance** (measured; regenerate with `./benchmark --full`):
 1M files **1.74 s** / 215 MB against a 15 s / 300 MB budget · 100K in **0.11 s**.
