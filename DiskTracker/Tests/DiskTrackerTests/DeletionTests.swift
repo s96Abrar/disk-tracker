@@ -298,7 +298,7 @@ final class DeletionControllerTests: XCTestCase {
         controller.requestDelete(file("kernel", 10, path: "/System/Library/kernel"))
         XCTAssertTrue(controller.pendingIncludesProtected)
 
-        controller.requestDelete(file("mine.txt", 10, path: NSHomeDirectory() + "/Documents/mine.txt"))
+        controller.requestDelete(file("mine.txt", 10, path: ScopedAccess.realHome + "/Documents/mine.txt"))
         XCTAssertFalse(controller.pendingIncludesProtected)
     }
 
@@ -590,5 +590,25 @@ final class ScanHistoryBudgetTests: XCTestCase {
         let service = ScanHistoryService()
         service.pruneTreesToBudget()
         XCTAssertEqual(service.treeDiskUsage, 0)
+    }
+}
+
+// MARK: - Failure wording
+
+final class DeletionFailureWordingTests: XCTestCase {
+
+    /// The sandbox lets the app read far more than it may delete; a denied
+    /// Trash should say how to get delete access, not just "permission denied".
+    func testSandboxDenialPointsToChooseFolder() {
+        let denied = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
+        let posix = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError, userInfo: [
+            NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))])
+        for error in [denied, posix] {
+            XCTAssertTrue(
+                DeletionController.describe(.deletionFailed(underlying: error)).contains("Choose Folder"))
+        }
+        let missing = NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)
+        XCTAssertFalse(
+            DeletionController.describe(.deletionFailed(underlying: missing)).contains("Choose Folder"))
     }
 }

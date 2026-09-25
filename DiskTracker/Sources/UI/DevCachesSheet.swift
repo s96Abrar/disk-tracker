@@ -161,6 +161,11 @@ struct DevCachesSheet: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if !item.cache.trashable {
+                    Label("In a Library folder — delete it yourself in Finder", systemImage: "lock")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
                 if let command = item.cache.command {
                     HStack(spacing: 4) {
                         Text(item.cache.trashable ? "Or run in Terminal:" : "Clean up in Terminal:")
@@ -208,7 +213,7 @@ struct DevCachesSheet: View {
     private var footer: some View {
         HStack {
             Text(selection.isEmpty
-                 ? "Everything here is rebuilt by its tool on next use, except Archives."
+                 ? "Folders inside Library are measured only. Use Finder or the tool's command."
                  : "\(selection.count) selected · \(humanReadableBytes(selectionSize))")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)

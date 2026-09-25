@@ -27,13 +27,35 @@ final class FileOperationsServiceTests: XCTestCase {
 
     func testIsSystemProtectedUserLibraryPath() {
         let service = FileOperationsService.shared
-        let userLibrary = URL(fileURLWithPath: NSHomeDirectory() + "/Library")
+        let userLibrary = URL(fileURLWithPath: ScopedAccess.realHome + "/Library")
         XCTAssertTrue(service.isSystemProtected(url: userLibrary))
+    }
+
+    /// Any Library folder, at any depth and in any case, and everything in it.
+    func testIsSystemProtectedAnyLibraryFolder() {
+        let service = FileOperationsService.shared
+        for path in [
+            ScopedAccess.realHome + "/Library/Caches/Homebrew",
+            ScopedAccess.realHome + "/Library/Developer/Xcode/DerivedData",
+            "/Library/Caches/foo",
+            ScopedAccess.realHome + "/code/app/library/vendored.txt",
+        ] {
+            XCTAssertTrue(service.isSystemProtected(url: URL(fileURLWithPath: path)), path)
+        }
+        // A name that merely starts with "Library" is not a Library folder.
+        let lookalike = ScopedAccess.realHome + "/Documents/LibraryBooks/a.txt"
+        XCTAssertFalse(service.isSystemProtected(url: URL(fileURLWithPath: lookalike)))
+    }
+
+    /// The app's own container is under ~/Library but is the app's own data.
+    func testOwnContainerIsNotProtected() {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("x.txt")
+        XCTAssertFalse(FileOperationsService.shared.isSystemProtected(url: tmp))
     }
 
     func testIsNotSystemProtectedHomeSubfolder() {
         let service = FileOperationsService.shared
-        let homeSubfolder = URL(fileURLWithPath: NSHomeDirectory() + "/Documents/test.txt")
+        let homeSubfolder = URL(fileURLWithPath: ScopedAccess.realHome + "/Documents/test.txt")
         XCTAssertFalse(service.isSystemProtected(url: homeSubfolder))
     }
 

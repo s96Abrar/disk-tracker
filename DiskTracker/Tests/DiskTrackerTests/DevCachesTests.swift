@@ -17,14 +17,13 @@ final class DevCachesTests: XCTestCase {
         }
     }
 
-    /// Guards the trash path: tightening the `~/Library` protection rule to the
-    /// real home would otherwise turn every cache delete into a silent refusal.
-    func testTrashableCachesAreNotSystemProtected() {
-        for cache in DevCache.all where cache.trashable {
-            XCTAssertFalse(
-                FileOperationsService.shared.isSystemProtected(url: URL(fileURLWithPath: cache.path)),
-                cache.path)
-        }
+    /// Nothing under a Library folder goes to Trash; only the home dot-folder
+    /// caches do.
+    func testOnlyDotFolderCachesAreTrashable() {
+        XCTAssertEqual(
+            DevCache.all.filter(\.trashable).map(\.relativePath),
+            [".npm/_cacache", ".cargo/registry/cache", ".cargo/git",
+             ".gradle/caches", ".gradle/daemon", ".gradle/wrapper", ".android/cache"])
     }
 
     func testRealHomeIsNotTheContainer() {
@@ -37,6 +36,7 @@ final class DevCachesTests: XCTestCase {
     }
 
     /// Simulator devices hold installed apps and data — measure, never trash.
+    /// The Library rule covers it; this pins that down.
     func testSimulatorDevicesAreMeasureOnly() {
         let devices = DevCache.all.first { $0.relativePath.hasSuffix("CoreSimulator/Devices") }
         XCTAssertEqual(devices?.trashable, false)

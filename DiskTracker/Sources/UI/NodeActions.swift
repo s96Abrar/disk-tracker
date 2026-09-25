@@ -117,15 +117,26 @@ final class DeletionController {
         )
     }
 
-    private static func describe(_ error: FileOperationError) -> String {
+    static func describe(_ error: FileOperationError) -> String {
         switch error {
         case .invalidURL:
             return "the path isn't a file"
         case .systemPathProtected:
-            return "it's a protected system location"
+            return "it's inside a Library or system folder. If you're sure, delete it yourself in Finder"
+        case .deletionFailed(let underlying) where isPermissionDenied(underlying):
+            // The sandbox lets the app read far more than it may delete.
+            return "Disk Tracker can only delete from folders you chose. "
+                + "Scan this folder with Choose Folder… to delete from it"
         case .deletionFailed(let underlying):
             return underlying.localizedDescription
         }
+    }
+
+    private static func isPermissionDenied(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSCocoaErrorDomain, error.code == NSFileWriteNoPermissionError { return true }
+        let posix = (error.userInfo[NSUnderlyingErrorKey] as? NSError) ?? error
+        return posix.domain == NSPOSIXErrorDomain && [Int(EPERM), Int(EACCES)].contains(posix.code)
     }
 
     private static func summarize(_ failures: [(String, String)], deletedCount: Int) -> String {
@@ -212,14 +223,17 @@ private struct NodeActionsModifier: ViewModifier {
 
             Divider()
 
+            let isProtected = FileOperationsService.shared
+                .isSystemProtected(url: URL(fileURLWithPath: node.path))
             Button(role: .destructive) {
                 deletion.requestDelete(node)
             } label: {
-                Label("Move to Trash", systemImage: "trash")
+                Label(isProtected ? "Protected — Use Show in Finder" : "Move to Trash",
+                      systemImage: "trash")
             }
             // The scan root has no parent in the tree to delete from, and
             // removing it would leave the window showing a scan of nothing.
-            .disabled(node.path == model.rootNode?.path)
+            .disabled(node.path == model.rootNode?.path || isProtected)
         }
     }
 }
@@ -278,8 +292,9 @@ private struct DeletionConfirmationModifier: ViewModifier {
 
         if deletion.pendingIncludesProtected {
             parts.append(
-                "Some of these are in protected system locations and will be "
-                + "skipped — removing them could stop macOS from working.")
+                "Some of these are inside a Library or system folder and will be "
+                + "skipped — apps keep live data there. If you're sure, delete "
+                + "them yourself in Finder.")
         }
         if deletion.pendingIncludesFolder {
             parts.append("Folders are moved with everything inside them.")
