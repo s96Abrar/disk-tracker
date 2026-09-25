@@ -1,4 +1,4 @@
-<img src="DiskTracker/Sources/Assets.xcassets/AppIcon.appiconset/icon_128x128%402x.png" width="128" alt="Disk Tracker icon">
+<img src="docs/icon.png" width="128" alt="Disk Tracker icon">
 
 # Disk Tracker
 
