@@ -49,7 +49,11 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIS
 [[ -n "$VERSION" ]] || fail "CFBundleShortVersionString missing from $PLIST"
 
 echo -e "${BOLD}Disk Tracker — release packaging${RESET}"
-echo "Version: $VERSION"
+# Build number: the commit count, so every release build is higher than the
+# last. The App Store rejects an upload that reuses one. Needs full history
+# (the release workflow checks out with fetch-depth: 0).
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD)"
+echo "Version: $VERSION ($BUILD_NUMBER)"
 
 # ── 1. Rust engine ───────────────────────────────────────────────────
 header "1/5  Rust engine (release)"
@@ -72,6 +76,7 @@ cd "$SWIFT_DIR"
 rm -rf "$DERIVED"
 xcodebuild -project DiskTracker.xcodeproj -scheme DiskTracker \
     -configuration Release -derivedDataPath "$DERIVED" build \
+    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     | grep -E "error:|warning: .*deprecated|BUILD" || true
 
 APP="$DERIVED/Build/Products/Release/DiskTracker.app"
@@ -95,6 +100,10 @@ BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString'
 [[ "$BUNDLE_VERSION" == "$VERSION" ]] \
     || fail "Bundle version $BUNDLE_VERSION does not match source $VERSION"
 ok "Version $BUNDLE_VERSION"
+BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+[[ "$BUNDLE_BUILD" == "$BUILD_NUMBER" ]] \
+    || fail "Bundle build number $BUNDLE_BUILD does not match commit count $BUILD_NUMBER"
+ok "Build $BUNDLE_BUILD"
 
 codesign --verify --deep --strict "$APP" 2>/dev/null \
     || fail "Code signature invalid"
@@ -128,6 +137,27 @@ APP_ENT="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)"
 [[ -f "$APP/Contents/Resources/PrivacyInfo.xcprivacy" ]] \
     && ok "Privacy manifest bundled" \
     || fail "PrivacyInfo.xcprivacy missing from bundle"
+
+# Only public frameworks: anything under PrivateFrameworks fails App Review.
+if otool -L "$APP/Contents/MacOS/DiskTracker" "$ENGINE" | grep -q PrivateFrameworks; then
+    fail "Links a private framework"
+fi
+ok "Links public frameworks only"
+
+# The engine is the one thing the app launches. The App Store forbids running
+# tools outside the bundle, so a new Process() anywhere else fails here.
+LAUNCHERS="$(grep -rl 'Process()' "$SWIFT_DIR/Sources" | xargs grep -L '#if DISKTRACKER_V05' | xargs -n1 basename)"
+[[ "$LAUNCHERS" == "DirectoryScannerBridge.swift" ]] \
+    || fail "Process() outside the engine bridge: $(echo $LAUNCHERS)"
+ok "Launches only the bundled engine"
+
+# Deferred v0.5 services launch outside tools or need a privileged helper, so
+# none may reach a release. Their class names survive in the binary if they do.
+BIN_STRINGS="$(strings -a "$APP/Contents/MacOS/DiskTracker")"
+for svc in $(grep -rl '#if DISKTRACKER_V05' "$SWIFT_DIR/Sources" | xargs -n1 basename | sed 's/\.swift$//'); do
+    ! grep -q "$svc" <<<"$BIN_STRINGS" || fail "Gated v0.5 code ($svc) is in the Release binary"
+done
+ok "No gated v0.5 services in the binary"
 
 if codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "app-sandbox"; then
     ok "Sandbox entitlement present"

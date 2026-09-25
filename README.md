@@ -57,7 +57,8 @@ signature stays intact and verifiable.
 | **Scan** | A local folder or a whole volume. Hidden files optional; folders you never want scanned can be excluded permanently. |
 | **See** | Sunburst and treemap, both click-to-descend with a breadcrumb back. Or a sortable list. Hover for the path and size. |
 | **Find** | Search by name, filter by category, or use smart filters: large files, old files, empty folders, duplicates (SHA-256), oversized app bundles. |
-| **Delete** | Move to Trash, singly or in a batch, with a confirmation that states how much you'd actually reclaim. System paths are refused. |
+| **Delete** | Move to Trash, singly or in a batch, with a confirmation that states how much you'd actually reclaim. System paths and anything inside a `Library` folder are refused. |
+| **Developer caches** | Sizes of Xcode, Simulator, Homebrew, npm/Yarn/pnpm, pip, Cargo, Gradle and Android caches at a glance, with each tool's own cleanup command. |
 | **Inspect** | Spacebar for Quick Look, exactly like Finder. |
 | **Export** | The whole tree as JSON or CSV. |
 | **Watch** | Live free-space readout, with a warning banner at a threshold you choose. |
@@ -70,8 +71,9 @@ signature stays intact and verifiable.
 - **Guess.** Sizes are the bytes actually allocated on disk
   (`ATTR_FILE_DATAALLOCSIZE`) — the same number `du` and Finder report, which
   means sparse files are reported honestly rather than at their nominal length.
-- **Phone home.** No network code, no analytics. The app sandbox grants it
-  nothing but the folders you pick.
+- **Phone home.** No network code, no analytics, and no network entitlement.
+  See [PRIVACY.md](PRIVACY.md). The app sandbox lets it delete only inside
+  folders you pick.
 
 ---
 
