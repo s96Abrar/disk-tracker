@@ -114,9 +114,14 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         // deadlock. Reading first is what makes the child able to finish.
         // stderr carries `progress <n>` lines during the walk, so it is read
         // line by line rather than in one shot at EOF.
+        //
+        // The reader runs at the caller's QoS. It is waited on below with a
+        // semaphore, which cannot lend the waiter its priority, so a lower
+        // class here is a priority inversion: the scan stalls behind it.
         let errSink = DataSink()
         let errDrained = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
+        let callerQoS = DispatchQoS.QoSClass(rawValue: qos_class_self()) ?? .default
+        DispatchQueue.global(qos: callerQoS).async {
             let handle = errorPipe.fileHandleForReading
             var pending = Data()
             while true {
