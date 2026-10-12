@@ -159,7 +159,7 @@ final class DirectoryScannerBridge: @unchecked Sendable {
             return nil
         }
         log.info("decoded \(buffer.recordCount) records")
-        return buildTree(buffer)
+        return buildTree(buffer, rootPath: path)
     }
 
     /// Parse a `progress <count>` line from the engine's stderr.
@@ -175,7 +175,10 @@ final class DirectoryScannerBridge: @unchecked Sendable {
     /// One pass. Paths, recursive physical totals and child ordering used to be
     /// three more full walks over the finished tree; they are all derivable
     /// during assembly, and a walk of a million-node tree is not free.
-    func buildTree(_ buffer: ScanBuffer) -> DiskNode? {
+    ///
+    /// The engine names the root by its last component only; `rootPath` gives
+    /// it, and so every descendant, the absolute path file operations need.
+    func buildTree(_ buffer: ScanBuffer, rootPath: String? = nil) -> DiskNode? {
         guard buffer.recordCount > 0 else { return nil }
 
         // `parent_id` is a node_id, not an array index, so children are grouped
@@ -190,9 +193,11 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         // appended — appending copies. Attaching grandchildren afterwards would
         // leave the parent holding a stale, childless copy, which is what used
         // to drop nested descendants from folder totals.
-        func assemble(_ index: Int, parentPath: String) -> DiskNode {
+        func assemble(_ index: Int, parentPath: String?) -> DiskNode {
             let name = buffer.name(at: index)
-            let path = parentPath.isEmpty ? name : "\(parentPath)/\(name)"
+            // Joining onto "/" must not produce "//Applications".
+            let path = parentPath.map { $0.hasSuffix("/") ? $0 + name : "\($0)/\(name)" }
+                ?? rootPath ?? name
 
             let nodeType = buffer.nodeType(at: index)
             let kind: FileKind = nodeType == 1
@@ -230,6 +235,6 @@ final class DirectoryScannerBridge: @unchecked Sendable {
             )
         }
 
-        return assemble(0, parentPath: "")
+        return assemble(0, parentPath: nil)
     }
 }

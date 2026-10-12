@@ -394,6 +394,10 @@ final class ScanBufferTreeTests: XCTestCase {
             "Bundled engine did not run — check Contents/MacOS and its entitlements"
         )
         XCTAssertEqual(root.children?.map(\.name), ["a.txt"])
+        // Trash, Finder and Quick Look all take `path` as-is; a relative one
+        // resolves against the app's working directory and reports not found.
+        XCTAssertEqual(root.path, dir.path)
+        XCTAssertEqual(root.children?.first?.path, dir.appendingPathComponent("a.txt").path)
     }
 
     /// The stderr reader is waited on with a semaphore, which cannot lend the
