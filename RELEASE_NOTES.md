@@ -1,3 +1,33 @@
+# Disk Tracker v0.1.3 — Find the 40 GB you forgot about
+
+## What's new in v0.1.3
+
+**Fixes.**
+- Move to Trash works again. Selected files and folders were reported as "not found" because the app was looking for them in the wrong place. Show in Finder, Open and Quick Look had the same problem and work again too.
+
+Scans saved in History before this version still point to the wrong place. Rescan a folder before deleting from it.
+
+## Installing
+
+1. Open `DiskTracker-v0.1.3.dmg` and drag **Disk Tracker** to Applications.
+2. Run this once in Terminal:
+   ```
+   xattr -dr com.apple.quarantine /Applications/DiskTracker.app
+   ```
+3. Open it normally.
+
+Step 2 is required because this build is **ad-hoc signed rather than
+notarized** — Apple notarization needs a paid Developer Program membership.
+The command clears the "downloaded from the internet" flag on this app only;
+it does not disable Gatekeeper system-wide, and the signature stays valid.
+
+> Right-click → Open does **not** work for ad-hoc signed apps on Apple
+> Silicon. The `xattr` command is required.
+
+**Requires macOS 15.0 or later.**
+
+---
+
 # Disk Tracker v0.1.2 — Find the 40 GB you forgot about
 
 ## What's new in v0.1.2
