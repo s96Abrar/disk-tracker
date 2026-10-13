@@ -180,9 +180,6 @@ final class AppModelTests: XCTestCase {
         model.currentView = .treemap
         XCTAssertEqual(model.currentView, .treemap)
         
-        model.currentView = .list
-        XCTAssertEqual(model.currentView, .list)
-        
         model.currentView = .sunburst
         XCTAssertEqual(model.currentView, .sunburst)
     }
@@ -302,6 +299,67 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.itemSize(for: .images), 400)
         XCTAssertEqual(model.itemSize(for: .videos), 900)
         XCTAssertEqual(model.itemSize(for: .archives), 0)
+    }
+
+    // MARK: - Shared focus (list and chart show the same folder)
+
+    /// /home/a/b/file.txt, with `a` and `b` both directories.
+    private func makeFocusTree() -> DiskNode {
+        let file = makeLeafNode(name: "file.txt", path: "/home/a/b/file.txt")
+        let b = makeTreeNode(name: "b", path: "/home/a/b", children: [file])
+        let a = makeTreeNode(name: "a", path: "/home/a", children: [b])
+        return makeTreeNode(name: "home", path: "/home", children: [a])
+    }
+
+    func testFocusStartsAtTheScanRoot() {
+        let model = AppModel()
+        model.rootNode = makeFocusTree()
+        XCTAssertTrue(model.focusPath.isEmpty)
+        XCTAssertEqual(model.focusedNode?.path, "/home")
+    }
+
+    /// The sunburst can hand over a grandchild; the breadcrumb still needs
+    /// every folder in between.
+    func testFocusOnADeepFolderBuildsTheWholeChain() throws {
+        let model = AppModel()
+        model.rootNode = makeFocusTree()
+        let b = try XCTUnwrap(model.rootNode?.children?.first?.children?.first)
+
+        model.focus(on: b)
+        XCTAssertEqual(model.focusPath.map(\.path), ["/home/a", "/home/a/b"])
+        XCTAssertEqual(model.focusedNode?.path, "/home/a/b")
+    }
+
+    func testFocusIgnoresFiles() throws {
+        let model = AppModel()
+        model.rootNode = makeFocusTree()
+        let file = try XCTUnwrap(model.rootNode?.children?.first?.children?.first?.children?.first)
+
+        model.focus(on: file)
+        XCTAssertTrue(model.focusPath.isEmpty, "a file has nothing to zoom into")
+    }
+
+    /// Deleting the focused folder lands on its parent rather than a folder
+    /// that no longer exists.
+    func testFocusFallsBackToTheNearestSurvivingFolder() throws {
+        let model = AppModel()
+        model.rootNode = makeFocusTree()
+        let b = try XCTUnwrap(model.rootNode?.children?.first?.children?.first)
+        model.focus(on: b)
+
+        model.removeFromTree(paths: ["/home/a/b"])
+        XCTAssertEqual(model.focusPath.map(\.path), ["/home/a"])
+        XCTAssertNil(model.focusedNode?.children?.first { $0.name == "b" },
+                     "the focused copy must be the pruned tree, not a stale one")
+    }
+
+    func testNewScanOfAnotherFolderClearsFocus() throws {
+        let model = AppModel()
+        model.rootNode = makeFocusTree()
+        model.focus(on: try XCTUnwrap(model.rootNode?.children?.first))
+
+        model.rootNode = makeTreeNode(name: "elsewhere", path: "/elsewhere", children: [])
+        XCTAssertTrue(model.focusPath.isEmpty)
     }
 
     // MARK: - Engine Progress Protocol
@@ -493,4 +551,5 @@ final class AppModelTests: XCTestCase {
         model.freeSpaceMonitor.stopMonitoring()
     }
 }
+
 

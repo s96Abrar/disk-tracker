@@ -19,10 +19,44 @@ final class AppModel: @unchecked Sendable {
         didSet {
             cachedTreeStats = nil
             cachedMatches = nil
+            // The path holds copies, so re-take them from the new tree. A
+            // deleted folder drops back to its nearest surviving ancestor; a
+            // different scan root matches nothing and clears it.
+            focusPath = focusPath.last.map { chain(to: $0.path) } ?? []
         }
     }
     var selectedNode: DiskNode?
     var currentView: ViewMode = .sunburst
+
+    /// Folders the list and chart are zoomed into, outermost first, not
+    /// including the scan root. Empty = the scan root. Shared so the list,
+    /// sunburst and treemap always show the same folder.
+    var focusPath: [DiskNode] = []
+
+    /// The folder whose contents are on screen.
+    var focusedNode: DiskNode? { focusPath.last ?? rootNode }
+
+    /// Zoom into `node`, which may sit at any depth below the scan root.
+    /// Files and empty folders have nothing to show, so they are ignored.
+    func focus(on node: DiskNode) {
+        guard node.fileKind == .directory, node.children?.isEmpty == false else { return }
+        focusPath = chain(to: node.path)
+    }
+
+    /// Folders from just below the root down to `path`, stopping at the
+    /// deepest one that exists.
+    private func chain(to path: String) -> [DiskNode] {
+        var result: [DiskNode] = []
+        var current = rootNode
+        while let children = current?.children,
+              let next = children.first(where: {
+                  $0.fileKind == .directory && (path == $0.path || path.hasPrefix($0.path + "/"))
+              }) {
+            result.append(next)
+            current = next
+        }
+        return result
+    }
 
     // MARK: - Navigation helpers
 
@@ -184,15 +218,8 @@ final class AppModel: @unchecked Sendable {
     var onHiddenFilesChanged: (() -> Void)?
 
     enum ViewMode: String, CaseIterable, Identifiable {
-        case sunburst = "Sunburst", treemap = "Treemap", list = "List"
+        case sunburst = "Sunburst", treemap = "Treemap"
         var id: String { rawValue }
-        var icon: String {
-            switch self {
-            case .sunburst: return "sun.max"
-            case .treemap:  return "square.grid.2x2"
-            case .list:     return "list.bullet"
-            }
-        }
     }
 
     // MARK: - Phase 4: Smart Filters

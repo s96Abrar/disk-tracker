@@ -5,10 +5,10 @@
 //  Scan Results screen. Reached when a scan completes (live or restored
 //  from history). Mirrors the sunburst mock top-to-bottom:
 //   - Sidebar (CategoriesSidebar)
-//   - Top toolbar: view switcher (Treemap/Sunburst/List) + search +
-//     Smart Filters + Re-scan + Choose Folder
-//   - Visualization area (delegated to existing TreemapView/SunburstView/
-//     DirectoryListView based on `model.currentView`)
+//   - Top toolbar: search + Smart Filters + Re-scan + Choose Folder
+//   - Breadcrumb for the folder both panes are showing
+//   - Resizable split: list (or filtered results) on the left, Sunburst or
+//     Treemap on the right, picked with `model.currentView`
 //   - Status bar (shared)
 //
 //  Re-scan runs `model.startScan(path: model.currentScanPath)`.
@@ -101,9 +101,6 @@ struct ScanResultsView: View {
 
     private var toolbar: some View {
         HStack(spacing: Spacing.sm) {
-            // View switcher — pill style matching the sunburst mock.
-            viewSwitcher
-
             Spacer()
 
             HStack(spacing: 6) {
@@ -195,37 +192,6 @@ struct ScanResultsView: View {
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.4))
     }
 
-    private var viewSwitcher: some View {
-        HStack(spacing: 0) {
-            ForEach(AppModel.ViewMode.allCases) { mode in
-                let active = model.currentView == mode
-                Button {
-                    model.currentView = mode
-                } label: {
-                    Text(mode.rawValue)
-                        .font(.system(size: 11, weight: active ? .semibold : .regular))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .foregroundStyle(active ? .white : .secondary)
-                        .background(
-                            Capsule()
-                                .fill(active ? Color.brandAccent : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(
-            Capsule()
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            Capsule()
-                .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
-        )
-    }
-
     // MARK: - Visualization area
 
     @ViewBuilder
@@ -234,22 +200,96 @@ struct ScanResultsView: View {
             scanningState
         } else if model.rootNode == nil {
             emptyState
-        } else if model.isFiltering {
-            // A category or search narrows the results to a flat list; the
-            // sunburst and treemap stay structural views of the whole tree.
-            FilteredResultsView(model: model)
         } else {
-            // Delegate to existing visualizations. They honour the same
-            // AppModel.currentView selector that the legacy toolbar used.
-            switch model.currentView {
-            case .sunburst:
-                SunburstView(model: model)
-            case .treemap:
-                TreemapView(model: model)
-            case .list:
-                DirectoryListView(model: model)
+            VStack(spacing: 0) {
+                breadcrumb
+                Divider().opacity(0.3)
+                HSplitView {
+                    // A category or search narrows the left pane to a flat
+                    // list; the chart stays a structural view of the tree.
+                    Group {
+                        if model.isFiltering {
+                            FilteredResultsView(model: model)
+                        } else {
+                            DirectoryListView(model: model)
+                        }
+                    }
+                    .frame(minWidth: 360, idealWidth: 480)
+
+                    chartPane
+                        .frame(minWidth: 360)
+                }
             }
         }
+    }
+
+    // ponytail: divider position resets each launch; wrap NSSplitView with an
+    // autosaveName if users ask for it to stick.
+    private var chartPane: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Picker("Chart", selection: $model.currentView) {
+                    ForEach(AppModel.ViewMode.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            .padding(Spacing.sm)
+
+            switch model.currentView {
+            case .sunburst: SunburstView(model: model)
+            case .treemap:  TreemapView(model: model)
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    /// Where both panes are. Always shown, so zooming doesn't shift the
+    /// layout; the chart's own gestures and a list double-click move it.
+    private var breadcrumb: some View {
+        HStack(spacing: 4) {
+            Button {
+                model.focusPath = []
+            } label: {
+                Label(model.rootNode?.name ?? "", systemImage: "house")
+                    .font(.system(size: 11, weight: model.focusPath.isEmpty ? .semibold : .medium))
+            }
+            .buttonStyle(.plain)
+
+            ForEach(Array(model.focusPath.enumerated()), id: \.element.id) { index, node in
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Button {
+                    // Truncating to this node is what makes the crumb a jump
+                    // rather than a single step back.
+                    model.focusPath = Array(model.focusPath.prefix(index + 1))
+                } label: {
+                    Text(node.name)
+                        .font(.system(size: 11,
+                                      weight: index == model.focusPath.count - 1 ? .semibold : .regular))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: Spacing.sm)
+
+            Button {
+                model.focusPath.removeLast()
+            } label: {
+                Label("Up", systemImage: "arrow.up.left")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.focusPath.isEmpty)
+            .keyboardShortcut(.upArrow, modifiers: .command)
+            .help("Go up one level (⌘↑)")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 6)
     }
 
     /// Shown while the engine is walking. The count comes from the engine's

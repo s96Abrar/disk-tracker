@@ -15,9 +15,6 @@ struct SunburstView: View {
     /// Index into the currently rendered segment list.
     @State private var hoveredIndex: Int? = nil
 
-    /// Node the rings are currently centred on. nil = the scan root.
-    @State private var focusNode: DiskNode? = nil
-
     // Color palette for file types
     private let colors: [FileKind: Color] = [
         .image: Color(hex: "FF6B6B"),
@@ -83,11 +80,9 @@ struct SunburstView: View {
             .nodeActions(model: model) {
                 hoveredIndex.flatMap { segments.indices.contains($0) ? segments[$0].node : nil }
             }
-            .onChange(of: model.rootNode) { _, _ in
-                // A new scan invalidates whatever we were zoomed into.
-                focusNode = nil
-                hoveredIndex = nil
-            }
+            .onChange(of: model.rootNode) { _, _ in hoveredIndex = nil }
+            // The index points into the old folder's wedges.
+            .onChange(of: model.focusedNode?.path) { _, _ in hoveredIndex = nil }
 
             if let index = hoveredIndex, segments.indices.contains(index),
                let node = segments[index].node, let root = currentRoot {
@@ -127,18 +122,14 @@ struct SunburstView: View {
 
     // MARK: - Interaction
 
-    private var currentRoot: DiskNode? { focusNode ?? model.rootNode }
+    private var currentRoot: DiskNode? { model.focusedNode }
 
     private func handleTap(at location: CGPoint, center: CGPoint, maxRadius: CGFloat, segments: [SunburstSegment]) {
         let distance = hypot(location.x - center.x, location.y - center.y)
 
         // Centre disc = "go up one level".
         if distance <= centreRadius(maxRadius) {
-            guard let root = model.rootNode, let focus = focusNode else { return }
-            let up = parent(of: focus, in: root)
-            // Normalise "back at the scan root" to nil, so the view knows it is
-            // no longer zoomed and drops the "go up" hint.
-            focusNode = (up?.path == root.path) ? nil : up
+            if !model.focusPath.isEmpty { model.focusPath.removeLast() }
             return
         }
 
@@ -146,21 +137,7 @@ struct SunburstView: View {
               let node = hit.node else { return }
 
         model.selectNode(node)
-        // Only directories with contents are worth zooming into.
-        if node.fileKind == .directory, node.children?.isEmpty == false {
-            focusNode = node
-        }
-    }
-
-    /// Find the parent of `node` by walking from `root`. Returns nil when
-    /// `node` is the root, which lands the view back at the scan root.
-    private func parent(of node: DiskNode, in root: DiskNode) -> DiskNode? {
-        guard let children = root.children else { return nil }
-        if children.contains(where: { $0.path == node.path }) { return root }
-        for child in children {
-            if let found = parent(of: node, in: child) { return found }
-        }
-        return nil
+        model.focus(on: node)
     }
 
     // MARK: - Layout
@@ -235,7 +212,7 @@ struct SunburstView: View {
 
     private func drawCentre(in context: GraphicsContext, at center: CGPoint, radius: CGFloat) {
         let root = currentRoot
-        let zoomed = focusNode != nil
+        let zoomed = !model.focusPath.isEmpty
         // Stack the lines around the centre so the block stays vertically
         // centred whether or not the "go up" hint is present.
         let titleY = center.y - (zoomed ? 14 : 8)
