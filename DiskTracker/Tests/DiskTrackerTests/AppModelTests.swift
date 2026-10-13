@@ -294,6 +294,16 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.itemCount(for: .archives), 0)
     }
 
+    /// Images win on count, videos on bytes: the sidebar must rank by bytes.
+    func testCategorySizesComeFromTreeStats() {
+        let model = AppModel()
+        model.rootNode = makeFilterTree()
+
+        XCTAssertEqual(model.itemSize(for: .images), 400)
+        XCTAssertEqual(model.itemSize(for: .videos), 900)
+        XCTAssertEqual(model.itemSize(for: .archives), 0)
+    }
+
     // MARK: - Engine Progress Protocol
     //
     // The engine reports live progress as `progress <count>` lines on stderr;
@@ -483,3 +493,4 @@ final class AppModelTests: XCTestCase {
         model.freeSpaceMonitor.stopMonitoring()
     }
 }
+

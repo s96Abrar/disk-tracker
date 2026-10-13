@@ -80,25 +80,40 @@ struct CategoriesSidebar: View {
     private func categoryRow(_ category: ScanCategory) -> some View {
         let isSelected = model.selectedCategory == category
         let count = model.itemCount(for: category)
+        // A folder's own allocation is near zero and its contents are already
+        // counted under their kinds, so Directories keeps the count.
+        let showsSize = category != .directories
+        let size = model.itemSize(for: category)
+        let total = model.treeStats.totalSize
 
         Button {
             model.selectedCategory = category
         } label: {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: category.icon)
-                    .font(.system(size: 14))
-                    .frame(width: 18)
-                    .foregroundStyle(isSelected ? Color.brandAccent : .secondary)
-                Text(category.rawValue)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                Spacer(minLength: 0)
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 4) {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: category.icon)
+                        .font(.system(size: 14))
+                        .frame(width: 18)
+                        .foregroundStyle(isSelected ? Color.brandAccent : .secondary)
+                    Text(category.rawValue)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? .primary : .secondary)
+                    Spacer(minLength: 0)
+                    if count > 0 {
+                        Text(showsSize ? humanReadableBytes(size) : "\(count)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if showsSize, total > 0 {
+                    ProgressView(value: Double(size), total: Double(total))
+                        .progressViewStyle(.linear)
+                        .controlSize(.mini)
+                        .tint(Color.brandAccent)
+                        .padding(.leading, 18 + Spacing.sm)
                 }
             }
+            .help(showsSize && count > 0 ? "\(count) items" : "")
             .padding(.horizontal, Spacing.sm)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
