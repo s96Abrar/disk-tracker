@@ -9,12 +9,13 @@ struct DirectoryListView: View {
     var model: AppModel
 
     var body: some View {
-        if let root = model.rootNode {
+        // The folder the chart is zoomed into, so both panes always agree.
+        if let folder = model.focusedNode {
             List {
                 Section {
-                    let displayNodes = model.sortedNodes(root.children ?? [])
+                    let displayNodes = model.sortedNodes(folder.children ?? [])
                     ForEach(displayNodes, id: \.id) { child in
-                        DirectoryRowView(node: child, model: model)
+                        DirectoryRowView(node: child, model: model, baseDepth: child.depth)
                     }
                 } header: {
                     HStack(spacing: 4) {
@@ -67,6 +68,9 @@ private struct SortHeaderButton: View {
 struct DirectoryRowView: View {
     let node: DiskNode
     var model: AppModel
+    /// Depth of the top-level rows, so indentation is relative to the folder
+    /// being shown rather than to the scan root.
+    let baseDepth: UInt16
     @State private var isExpanded = false
 
     /// In batch mode the tick reflects multi-selection; otherwise it tracks the
@@ -79,9 +83,9 @@ struct DirectoryRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if node.depth > 0 {
+            if node.depth > baseDepth {
                 Spacer()
-                    .frame(width: CGFloat(node.depth * 16))
+                    .frame(width: CGFloat(node.depth - baseDepth) * 16)
             }
             if node.fileKind == .directory && !(node.children?.isEmpty ?? true) {
                 Button {
@@ -135,13 +139,18 @@ struct DirectoryRowView: View {
         .padding(.vertical, 4)
         .background(isSelected ? Color.brandAccent.opacity(0.18) : .clear)
         .contentShape(Rectangle())
+        // Double-click opens a folder, as in Finder. Declared before the single
+        // tap so SwiftUI can tell the two apart.
+        .onTapGesture(count: 2) {
+            model.focus(on: node)
+        }
         .onTapGesture {
             model.selectNode(node)
         }
         .nodeActions(node, model: model)
         if isExpanded, let children = node.children {
             ForEach(children) { child in
-                DirectoryRowView(node: child, model: model)
+                DirectoryRowView(node: child, model: model, baseDepth: baseDepth)
             }
         }
     }

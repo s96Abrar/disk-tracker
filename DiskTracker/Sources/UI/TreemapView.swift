@@ -26,16 +26,8 @@ struct TreemapView: View {
     /// node was right-clicked — a Canvas has no per-tile view to attach one to.
     @State private var hoveredIndex: Int?
 
-    /// Folder the tiles are currently drawn from. nil = the scan root.
-    ///
-    /// Held here rather than on `AppModel` for the same reason the sunburst
-    /// holds its own: descending is a property of this view, and the two
-    /// visualizations should not yank each other around when the user switches
-    /// between them.
-    @State private var focusPath: [DiskNode] = []
-
     /// The node whose children are being drawn.
-    private var currentRoot: DiskNode? { focusPath.last ?? model.rootNode }
+    private var currentRoot: DiskNode? { model.focusedNode }
 
     var body: some View {
         GeometryReader { geometry in
@@ -91,77 +83,15 @@ struct TreemapView: View {
                     guard let hit = layout.first(where: { $0.frame.contains(event.location) }),
                           let node = hit.node else { return }
                     model.selectNode(node)
-                    // Descending into an empty folder would show a blank
-                    // canvas with no way to tell it apart from a bug.
-                    if node.fileKind == .directory, node.children?.isEmpty == false {
-                        focusPath.append(node)
-                        hoveredIndex = nil
-                    }
+                    model.focus(on: node)
                 }
             )
             .nodeActions(model: model) {
                 hoveredIndex.flatMap { layout.indices.contains($0) ? layout[$0].node : nil }
             }
-            .onChange(of: model.rootNode) { _, _ in
-                // A new scan invalidates the old path entirely.
-                focusPath = []
-                hoveredIndex = nil
-            }
-            .overlay(alignment: .top) { breadcrumb }
-        }
-    }
-
-    /// Path back to the scan root. Without it, descending is a one-way trip:
-    /// the tiles give no indication of how deep the view has gone.
-    @ViewBuilder
-    private var breadcrumb: some View {
-        if !focusPath.isEmpty, let root = model.rootNode {
-            HStack(spacing: 4) {
-                Button {
-                    focusPath = []
-                    hoveredIndex = nil
-                } label: {
-                    Label(root.name, systemImage: "house")
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .buttonStyle(.plain)
-
-                ForEach(Array(focusPath.enumerated()), id: \.element.id) { index, node in
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                    Button {
-                        // Truncating to this node is what makes the crumb a
-                        // jump rather than a single step back.
-                        focusPath = Array(focusPath.prefix(index + 1))
-                        hoveredIndex = nil
-                    } label: {
-                        Text(node.name)
-                            .font(.system(size: 11,
-                                          weight: index == focusPath.count - 1 ? .semibold : .regular))
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer(minLength: Spacing.sm)
-
-                Button {
-                    focusPath.removeLast()
-                    hoveredIndex = nil
-                } label: {
-                    Label("Up", systemImage: "arrow.up.left")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.upArrow, modifiers: .command)
-                .help("Go up one level (⌘↑)")
-            }
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 6)
-            .background(.regularMaterial)
-            .clipShape(Capsule())
-            .padding(Spacing.sm)
+            .onChange(of: model.rootNode) { _, _ in hoveredIndex = nil }
+            // The index points into the old folder's tiles.
+            .onChange(of: model.focusedNode?.path) { _, _ in hoveredIndex = nil }
         }
     }
 
@@ -174,9 +104,8 @@ struct TreemapView: View {
     private static let minRowThickness: CGFloat = 20
 
     /// Layout is a pure function of the folder being shown and the space
-    /// available, which is also what makes drill-down testable: `@State` has no
-    /// storage on a view that was never installed, so a test cannot drive
-    /// `focusPath` directly — it passes the focused node instead.
+    /// available, which is also what makes drill-down testable: a test passes
+    /// the focused node instead of installing the view.
     static func layout(of root: DiskNode?, in size: CGSize, colors: [FileKind: Color] = [:]) -> [TreemapRect] {
         guard size.width > 0, size.height > 0 else { return [] }
 
