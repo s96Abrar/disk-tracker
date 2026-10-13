@@ -136,6 +136,12 @@ final class AppModel: @unchecked Sendable {
         return category.fileKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
     }
 
+    /// Bytes on disk in a category, for the sidebar size and share bar.
+    func itemSize(for category: ScanCategory) -> UInt64 {
+        let sizes = treeStats.fileTypeSizes
+        return category.fileKinds.reduce(0) { $0 + (sizes[$1] ?? 0) }
+    }
+
     /// Path currently being scanned (or last scanned). Used by the toolbar
     /// + status bar so the user always sees which folder a running scan
     /// belongs to.
