@@ -1,3 +1,34 @@
+# Disk Tracker v0.1.4 — Find the 40 GB you forgot about
+
+## What's new in v0.1.4
+
+**The list and the chart, side by side.** Scan results now show the list and the chart together instead of one at a time. Drag the divider between them to resize. Switch the chart between **Sunburst** and **Treemap** with the toggle above it.
+
+Both sides always show the same folder. Click into a folder in the chart, or double-click one in the list, and the other side follows. The path bar above both takes you back up, and so does ⌘↑. Switching between Sunburst and Treemap keeps your place, and deleting something no longer sends you back to the top folder.
+
+**Categories ranked by size.** The sidebar now shows how much space each kind of file takes — Images, Videos, Documents, Applications, Archives, Other — with a bar for its share of the scan. It used to show how many files there were, which put thousands of tiny files ahead of one huge disk image. Hover over a category to see the count.
+
+## Installing
+
+1. Open `DiskTracker-v0.1.4.dmg` and drag **Disk Tracker** to Applications.
+2. Run this once in Terminal:
+   ```
+   xattr -dr com.apple.quarantine /Applications/DiskTracker.app
+   ```
+3. Open it normally.
+
+Step 2 is required because this build is **ad-hoc signed rather than
+notarized** — Apple notarization needs a paid Developer Program membership.
+The command clears the "downloaded from the internet" flag on this app only;
+it does not disable Gatekeeper system-wide, and the signature stays valid.
+
+> Right-click → Open does **not** work for ad-hoc signed apps on Apple
+> Silicon. The `xattr` command is required.
+
+**Requires macOS 15.0 or later.**
+
+---
+
 # Disk Tracker v0.1.3 — Find the 40 GB you forgot about
 
 ## What's new in v0.1.3
