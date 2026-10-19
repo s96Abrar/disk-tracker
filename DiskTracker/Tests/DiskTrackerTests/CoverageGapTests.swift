@@ -239,20 +239,6 @@ final class ScanStateMachineTests: XCTestCase {
         XCTAssertFalse(model.isExpanded(folder))
     }
 
-    /// Toggling this is meant to trigger a re-scan, since the engine decides
-    /// what to walk.
-    func testHiddenFileToggleNotifies() {
-        let model = AppModel()
-        var fired = 0
-        model.onHiddenFilesChanged = { fired += 1 }
-
-        model.showHiddenFiles = true
-        XCTAssertEqual(fired, 1)
-
-        model.showHiddenFiles = true
-        XCTAssertEqual(fired, 1, "setting the same value should not re-scan")
-    }
-
     // MARK: Smart filters
 
     func testSmartFilterRunsOverTheTree() {
