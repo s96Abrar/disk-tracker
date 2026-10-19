@@ -379,6 +379,29 @@ final class ScanBufferTreeTests: XCTestCase {
         XCTAssertEqual(empty.children?.count, 0)
     }
 
+    /// The Settings toggle has to reach the engine: dot-files are skipped
+    /// unless the user turned them on.
+    func testHiddenFilesFollowTheSetting() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hidden-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("a".utf8).write(to: dir.appendingPathComponent("seen.txt"))
+        try Data("b".utf8).write(to: dir.appendingPathComponent(".hidden"))
+
+        let original = HiddenFileSettings.include
+        defer { HiddenFileSettings.include = original }
+        func names() throws -> [String] {
+            let root = try XCTUnwrap(DirectoryScannerBridge().scan(path: dir.path, config: .current))
+            return root.children?.map(\.name).sorted() ?? []
+        }
+
+        HiddenFileSettings.include = false
+        XCTAssertEqual(try names(), ["seen.txt"])
+        HiddenFileSettings.include = true
+        XCTAssertEqual(try names(), [".hidden", "seen.txt"])
+    }
+
     /// The engine the app actually launches, from Contents/MacOS. Catches a
     /// wrong location, an unlaunchable binary, and an engine signed with the
     /// sandbox entitlement but without inherit (verified: it fails then).

@@ -203,19 +203,11 @@ final class AppModel: @unchecked Sendable {
         expandedNodeIds.contains(node.id)
     }
 
-    /// Phase 3: Show or hide hidden files during scanning.
-    var showHiddenFiles: Bool = false {
-        didSet { if oldValue != showHiddenFiles { onHiddenFilesChanged?() } }
-    }
-
     /// Phase 3: Multi-selection for batch operations.
     var selectedNodes: Set<UUID> = []
 
     /// Phase 3: Whether batch selection mode is active.
     var isBatchMode: Bool = false
-
-    /// Callback when hidden file toggle changes (triggers re-scan).
-    var onHiddenFilesChanged: (() -> Void)?
 
     enum ViewMode: String, CaseIterable, Identifiable {
         case sunburst = "Sunburst", treemap = "Treemap"
@@ -475,9 +467,7 @@ final class AppModel: @unchecked Sendable {
         let generation = scanGeneration
         let startTime = Date()
         // Read on the main thread; the scan closure must not touch model state.
-        let scanConfig = ScanConfig(
-            excludeHiddenFiles: !showHiddenFiles,
-            excludedPaths: ExclusionSettings.paths)
+        let scanConfig = ScanConfig.current
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }

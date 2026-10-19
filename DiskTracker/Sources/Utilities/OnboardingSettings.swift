@@ -91,3 +91,26 @@ enum ExclusionSettings {
         paths = paths.filter { $0 != path }
     }
 }
+
+// MARK: - Hidden files
+
+/// Whether scans include names starting with a dot (`.git`, `.npm`, …).
+///
+/// Off by default: in a home folder those are mostly tool caches, which
+/// Developer Caches already sizes on its own.
+enum HiddenFileSettings {
+    private static let key = "com.disktracker.includeHiddenFiles"
+
+    static var include: Bool {
+        get { UserDefaults.standard.bool(forKey: key) }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+}
+
+extension ScanConfig {
+    /// What the user's settings ask a scan to skip.
+    static var current: ScanConfig {
+        ScanConfig(excludeHiddenFiles: !HiddenFileSettings.include,
+                   excludedPaths: ExclusionSettings.paths)
+    }
+}

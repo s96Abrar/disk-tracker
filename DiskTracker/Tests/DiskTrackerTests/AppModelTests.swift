@@ -184,35 +184,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.currentView, .sunburst)
     }
 
-    // MARK: - Hidden Files Toggle Tests
-
-    func testShowHiddenFilesDefaultsToFalse() {
-        let model = AppModel()
-        XCTAssertFalse(model.showHiddenFiles)
-    }
-
-    func testHiddenFilesToggleTriggersCallback() {
-        let model = AppModel()
-        var callbackCount = 0
-        model.onHiddenFilesChanged = { callbackCount += 1 }
-        
-        model.showHiddenFiles = true
-        XCTAssertEqual(callbackCount, 1)
-        
-        model.showHiddenFiles = false
-        XCTAssertEqual(callbackCount, 2)
-    }
-
-    func testSameValueDoesNotTriggerCallback() {
-        let model = AppModel()
-        var callbackCount = 0
-        model.onHiddenFilesChanged = { callbackCount += 1 }
-        
-        model.showHiddenFiles = true
-        model.showHiddenFiles = true  // Same value
-        XCTAssertEqual(callbackCount, 1)  // Only triggered once
-    }
-
     // MARK: - Category / Search Filtering
 
     private func makeFilterTree() -> DiskNode {

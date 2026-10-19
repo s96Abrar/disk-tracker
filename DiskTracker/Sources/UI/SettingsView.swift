@@ -26,6 +26,9 @@ struct SettingsView: View {
     /// Row selection in the exclusions list, so Remove knows its target.
     @State private var selectedExclusion: String?
 
+    /// Whether scans include dot-files. Mirrored from `HiddenFileSettings`.
+    @State private var includeHiddenFiles: Bool = HiddenFileSettings.include
+
     var body: some View {
         TabView {
             generalTab
@@ -39,6 +42,7 @@ struct SettingsView: View {
             showWelcomeAtLaunch = OnboardingSettings.showAtLaunch
             lowSpaceThreshold = LowSpaceSettings.thresholdPercent
             excludedPaths = ExclusionSettings.paths
+            includeHiddenFiles = HiddenFileSettings.include
         }
     }
 
@@ -100,6 +104,17 @@ private extension SettingsView {
 
     var scanningTab: some View {
         Form {
+            Section("Hidden Files") {
+                Toggle("Include hidden files and folders", isOn: $includeHiddenFiles)
+                    .onChange(of: includeHiddenFiles) { _, newValue in
+                        HiddenFileSettings.include = newValue
+                    }
+                Text("Names starting with a dot, such as .git or .npm. "
+                     + "Applies from the next scan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Excluded Folders") {
                 Text("Scans skip these folders and everything inside them. "
                      + "System locations are always skipped.")
