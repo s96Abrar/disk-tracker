@@ -95,7 +95,7 @@ Finder do. Reporting shared extents once is deferred.
   `#if DISKTRACKER_V05` and compile to nothing in a normal build; `helper-tool/`
   is not in the Xcode project at all. Build them with
   `./build-disk-tracker --v05`. The gated suite runs 27 more tests than a normal
-  one (363 and 390 at the time of writing).
+  one (360 and 387 at the time of writing).
 - **A passing test suite does not mean the code is reachable.** That gate exists
   because those services had full suites and zero callers, which reads as
   finished work.
