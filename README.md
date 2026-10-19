@@ -9,18 +9,16 @@
 ![Swift](https://img.shields.io/badge/Swift-6.0-orange)
 ![Rust](https://img.shields.io/badge/Rust-stable-orange)
 
-https://github.com/user-attachments/assets/e8444419-fcb9-41df-be1a-7b9cb83d210f
-
 **Find out where your disk space went, then get it back.**
 
-Disk Tracker scans a local folder or volume and shows the result as a sunburst,
-a treemap, or a list. Click through to the folders that are actually large,
-preview a file to check what it is, and move it to the Trash without leaving the
-app.
+https://github.com/user-attachments/assets/e8444419-fcb9-41df-be1a-7b9cb83d210f
+
+Disk Tracker scans a local folder or volume and shows the result as a list
+beside a sunburst or treemap. Click through to the folders that are actually
+large, preview a file to check what it is, and move it to the Trash without
+leaving the app.
 
 A scan of a million files takes **1.8 seconds** and **164 MB** of memory.
-
-![Sunburst view of a scanned folder, with a folder hovered](docs/screenshots/sunburst.png)
 
 > **v0.1 is the first shareable build.** It does local disks only. Network
 > volumes, drive health, APFS snapshot management and background scanning are
@@ -58,9 +56,9 @@ signature stays intact and verifiable.
 
 | | |
 |---|---|
-| **Scan** | A local folder or a whole volume. Hidden files optional; folders you never want scanned can be excluded permanently. |
-| **See** | Sunburst and treemap, both click-to-descend with a breadcrumb back. Or a sortable list. Hover for the path and size. |
-| **Find** | Search by name, filter by category, or use smart filters: large files, old files, empty folders, duplicates (SHA-256), oversized app bundles. |
+| **Scan** | A local folder or a whole volume. Hidden files are skipped by default; folders you never want scanned can be excluded permanently in Settings. |
+| **See** | A sortable list beside a sunburst or treemap, both showing the same folder. Click to descend, breadcrumb back. Hover for the path and size. |
+| **Find** | Search by name, filter by category (ranked by size), or use smart filters: large files, old files, empty folders, duplicates (SHA-256), oversized app bundles. |
 | **Delete** | Move to Trash, singly or in a batch, with a confirmation that states how much you'd actually reclaim. System paths and anything inside a `Library` folder are refused. |
 | **Developer caches** | Sizes of Xcode, Simulator, Homebrew, npm/Yarn/pnpm, pip, Cargo, Gradle and Android caches at a glance, with each tool's own cleanup command. |
 | **Inspect** | Spacebar for Quick Look, exactly like Finder. |
@@ -193,17 +191,17 @@ present — and then mounts the finished image and verifies it again.
 cd traversal-engine && cargo test --release    # 27 unit + 4 perf + 3 scale
 
 xcodebuild test -project DiskTracker/DiskTracker.xcodeproj \
-  -scheme DiskTracker -destination 'platform=macOS'        # 349 tests
+  -scheme DiskTracker -destination 'platform=macOS'        # 363 tests
 
 ./check-coverage                # per-file coverage, fails under target
 ./benchmark                     # performance targets
 ./measure-launch                # cold launch, process exec to first frame
 ```
 
-**Core coverage is 87.8%**, against a >80% target on the scanner, the domain
+**Core coverage is 88.2%**, against a >80% target on the scanner, the domain
 algorithms and the state machines.
 
-Whole-app coverage is 34.6%, and that number is not the target — it averages in
+Whole-app coverage is 52.6%, and that number is not the target — it averages in
 SwiftUI view bodies, which this project does not unit test. A single app-wide
 figure would mostly measure how much UI code exists. `./check-coverage` checks
 the files the target actually names.

@@ -20,12 +20,14 @@ Canvas-based visualizations and owns file operations.
 | Engine binary | `Contents/MacOS/disk-tracker-engine` | Sandbox forbids launching anything outside the bundle; signed sandbox + inherit |
 
 **Performance** (measured; regenerate with `./benchmark --full`):
-1M files **1.74 s** / 215 MB against a 15 s / 300 MB budget · 100K in **0.11 s**.
-60 fps and launch-to-window still need an Instruments pass.
+1M files **1.6–1.8 s** / 165 MB against a 15 s / 300 MB budget · 100K in
+**0.16 s** · cold launch to first frame **0.26 s**. Frame rate under live
+interaction is still unmeasured; only layout cost is (2 ms at 50K children).
 
 **Constraints:**
 - macOS 15.0+ (Sequoia), Swift 6.0 strict concurrency
-- App Sandbox enabled; needs `files.user-selected.read-write` before Trash works
+- App Sandbox enabled; Trash works only inside folders the user picked
+  (`files.user-selected.read-write` + app-scope bookmarks)
 - **Ad-hoc signing only** — no paid Developer Program membership, so no
   notarization, no Sparkle, no privileged helper
 
@@ -93,7 +95,7 @@ Finder do. Reporting shared extents once is deferred.
   `#if DISKTRACKER_V05` and compile to nothing in a normal build; `helper-tool/`
   is not in the Xcode project at all. Build them with
   `./build-disk-tracker --v05`. The gated suite runs 27 more tests than a normal
-  one (350 and 377 at the time of writing).
+  one (363 and 390 at the time of writing).
 - **A passing test suite does not mean the code is reachable.** That gate exists
   because those services had full suites and zero callers, which reads as
   finished work.
