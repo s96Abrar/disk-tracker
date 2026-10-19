@@ -15,3 +15,6 @@ dist/
 
 # Coverage run artifacts (badges/ is committed)
 .coverage.xcresult/
+
+# /brag launch-video runs (brag-output/, brag-output-<timestamp>/)
+brag-output*/
