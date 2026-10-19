@@ -9,6 +9,8 @@
 ![Swift](https://img.shields.io/badge/Swift-6.0-orange)
 ![Rust](https://img.shields.io/badge/Rust-stable-orange)
 
+https://github.com/user-attachments/assets/e8444419-fcb9-41df-be1a-7b9cb83d210f
+
 **Find out where your disk space went, then get it back.**
 
 Disk Tracker scans a local folder or volume and shows the result as a sunburst,
