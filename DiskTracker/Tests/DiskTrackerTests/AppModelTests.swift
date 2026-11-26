@@ -360,6 +360,8 @@ final class AppModelTests: XCTestCase {
     func testRejectsProgressLineWithoutValidCount() {
         XCTAssertNil(parseProgress("progress"))
         XCTAssertNil(parseProgress("progress abc"))
+        XCTAssertNil(parseProgress("unreadable 3"), "the unreadable count is not progress")
+        XCTAssertEqual(DirectoryScannerBridge.parseCount(Data("unreadable 3".utf8), prefix: "unreadable "), 3)
     }
 
     // MARK: - Tree Stats Tests

@@ -206,6 +206,10 @@ struct ScanResultsView: View {
             VStack(spacing: 0) {
                 breadcrumb
                 Divider().opacity(0.3)
+                if model.unreadableFolders > 0 {
+                    unreadableNotice
+                    Divider().opacity(0.3)
+                }
                 HSplitView {
                     // A category or search narrows the left pane to a flat
                     // list; the chart stays a structural view of the tree.
@@ -246,6 +250,25 @@ struct ScanResultsView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    /// The sandbox only opens folders the user picked, so a scan of anything
+    /// wider silently loses whatever it can't list. Say so, and offer the fix.
+    private var unreadableNotice: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(model.unreadableFolders == 1
+                 ? "1 folder couldn't be read, so sizes here are lower than what's on disk."
+                 : "\(model.unreadableFolders) folders couldn't be read, so sizes here are lower than what's on disk.")
+                .font(.system(size: 11))
+            Spacer(minLength: Spacing.sm)
+            Button("Choose Folder…", action: chooseFolderAndScan)
+                .controlSize(.small)
+                .help("Pick this folder in the panel to let Disk Tracker read all of it")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 6)
     }
 
     /// Where both panes are. Always shown, so zooming doesn't shift the

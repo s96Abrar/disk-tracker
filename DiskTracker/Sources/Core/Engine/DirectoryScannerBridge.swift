@@ -59,6 +59,9 @@ final class DirectoryScannerBridge: @unchecked Sendable {
     /// Prefix of a progress line on the engine's stderr: `progress <count>`.
     private static let progressPrefix = "progress "
 
+    /// Prefix of the engine's last stderr line: `unreadable <count>`.
+    private static let unreadablePrefix = "unreadable "
+
     /// The running engine process, so `cancel()` can kill it.
     private let taskLock = NSLock()
     private var currentTask: Process?
@@ -78,6 +81,9 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         /// Plain-language cause, for the screen. The engine's own diagnostics
         /// stay in the log.
         var failure: String?
+        /// Folders the engine couldn't list. Their contents are missing from
+        /// the tree, so its totals undercount.
+        var unreadableFolders = 0
     }
 
     /// Scan a path synchronously. Call from a background queue.
@@ -133,6 +139,7 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         // semaphore, which cannot lend the waiter its priority, so a lower
         // class here is a priority inversion: the scan stalls behind it.
         let errSink = DataSink()
+        let unreadable = OSAllocatedUnfairLock(initialState: 0)
         let errDrained = DispatchSemaphore(value: 0)
         let callerQoS = DispatchQoS.QoSClass(rawValue: qos_class_self()) ?? .default
         DispatchQueue.global(qos: callerQoS).async {
@@ -147,6 +154,8 @@ final class DirectoryScannerBridge: @unchecked Sendable {
                     pending = Data(pending[(newline + 1)...])
                     if let scanned = Self.parseProgress(line) {
                         onProgress?(scanned)
+                    } else if let count = Self.parseCount(line, prefix: Self.unreadablePrefix) {
+                        unreadable.withLock { $0 = count }
                     } else {
                         errSink.append(line)  // keep real diagnostics for the failure path
                     }
@@ -176,15 +185,20 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         guard let root = buildTree(buffer, rootPath: path) else {
             return ScanReport(failure: "The scanner returned no results.")
         }
-        return ScanReport(root: root)
+        return ScanReport(root: root, unreadableFolders: unreadable.withLock { $0 })
     }
 
     /// Parse a `progress <count>` line from the engine's stderr.
     /// Returns nil for anything else, which is treated as a diagnostic.
     static func parseProgress(_ line: Data) -> Int? {
+        parseCount(line, prefix: progressPrefix)
+    }
+
+    /// Parse `<prefix><count>`; nil for any other line.
+    static func parseCount(_ line: Data, prefix: String) -> Int? {
         guard let text = String(data: line, encoding: .utf8),
-              text.hasPrefix(progressPrefix) else { return nil }
-        return Int(text.dropFirst(progressPrefix.count).trimmingCharacters(in: .whitespaces))
+              text.hasPrefix(prefix) else { return nil }
+        return Int(text.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces))
     }
 
     /// Build the `DiskNode` hierarchy from the flat record buffer.

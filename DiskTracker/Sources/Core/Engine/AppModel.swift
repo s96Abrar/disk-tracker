@@ -84,6 +84,7 @@ final class AppModel: @unchecked Sendable {
         // one is read.
         rootNode = nil
         filesScanned = 0
+        unreadableFolders = 0
         isOpeningSavedScan = true
         scanState = .scanning(progress: 0)
         scanGeneration += 1
@@ -474,6 +475,11 @@ final class AppModel: @unchecked Sendable {
     /// count, not a fraction — the total is unknowable until the walk ends.
     var filesScanned: Int = 0
 
+    /// Folders the last scan couldn't read, usually because the sandbox only
+    /// opens folders the user picked. Their contents are missing from the
+    /// totals, which the results screen says.
+    var unreadableFolders: Int = 0
+
     /// Bumped on every start and cancel, so a scan that finishes after being
     /// cancelled (or superseded) can't overwrite newer state.
     @ObservationIgnored
@@ -492,6 +498,7 @@ final class AppModel: @unchecked Sendable {
         rootNode = nil
         scanState = .scanning(progress: 0.0)
         filesScanned = 0
+        unreadableFolders = 0
         scanGeneration += 1
         let generation = scanGeneration
         let startTime = Date()
@@ -522,6 +529,16 @@ final class AppModel: @unchecked Sendable {
                 }
                 return
             }
+            // Only the root itself being unreadable leaves it childless with
+            // an unreadable count; an empty readable folder has nothing to fail.
+            if report.unreadableFolders > 0, rootNode.children?.isEmpty ?? true {
+                DispatchQueue.main.async {
+                    guard generation == self.scanGeneration else { return }
+                    self.scanState = .failed(error: "Disk Tracker isn't allowed to read this folder. "
+                        + "Choose it with Choose Folder… to give access.")
+                }
+                return
+            }
             let duration = Date().timeIntervalSince(startTime)
 
             // Stats, serialization and the history write are all O(tree) and
@@ -535,6 +552,7 @@ final class AppModel: @unchecked Sendable {
                 guard generation == self.scanGeneration else { return }
                 self.scanGrant = grant
                 self.rootNode = rootNode
+                self.unreadableFolders = report.unreadableFolders
                 self.cachedTreeStats = stats
                 self.activeSmartFilter = nil
                 self.smartFilterResults = []

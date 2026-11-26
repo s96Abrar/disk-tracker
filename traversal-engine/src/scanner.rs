@@ -35,6 +35,8 @@ pub struct ScanState {
     pub excluded: Vec<PathBuf>,
     pub cancelled: AtomicBool,
     pub progress: AtomicU64,
+    /// Directories that could not be listed, usually for lack of permission.
+    pub unreadable: AtomicU64,
     pub results: Mutex<Vec<FileRecord>>,
     pub string_table: Mutex<Vec<u8>>,
     pub next_id: Mutex<u64>,
@@ -51,6 +53,7 @@ impl ScanState {
             excluded,
             cancelled: AtomicBool::new(false),
             progress: AtomicU64::new(0),
+            unreadable: AtomicU64::new(0),
             results: Mutex::new(Vec::with_capacity(4096)),
             string_table: Mutex::new(Vec::with_capacity(256 * 1024)),
             next_id: Mutex::new(1), // 0 = root
@@ -63,6 +66,9 @@ impl ScanState {
 pub struct ScanResult {
     pub records: Vec<FileRecord>,
     pub string_table: Vec<u8>,
+    /// Directories skipped because they could not be listed. Their contents
+    /// are missing from `records`, so totals undercount by that much.
+    pub unreadable_dirs: u64,
 }
 
 /// How often the progress monitor samples the entry counter.
@@ -185,6 +191,7 @@ pub fn scan_directory_excluding(
     Ok(ScanResult {
         records: result_records,
         string_table,
+        unreadable_dirs: state.unreadable.load(Ordering::Relaxed),
     })
 }
 
@@ -208,7 +215,10 @@ fn walk_dir_task<'sc>(
     // Expensive I/O outside the lock: the getattrlistbulk batches.
     let entries = match directory_walker::walk_directory(&path, state.config.exclude_hidden_files) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(_) => {
+            state.unreadable.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
     };
     if entries.is_empty() {
         return;
@@ -409,6 +419,23 @@ mod exclusion_tests {
         )
         .unwrap();
         assert!(names(&result).iter().any(|n| n == "keep"));
+    }
+
+    #[test]
+    fn unreadable_directories_are_counted() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tree();
+        let locked = dir.path().join("keep");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        let result =
+            scan_directory_excluding(dir.path(), ScanConfig::default(), vec![], |_| {}).unwrap();
+        // Restore first so the temp dir can be cleaned up even if asserts fail.
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(result.unreadable_dirs, 1);
+
+        let clean =
+            scan_directory_excluding(dir.path(), ScanConfig::default(), vec![], |_| {}).unwrap();
+        assert_eq!(clean.unreadable_dirs, 0);
     }
 
     #[test]
