@@ -55,6 +55,24 @@ final class TreePruningTests: XCTestCase {
         return model.rootNode.flatMap(find)
     }
 
+    /// Undo puts a deleted node back: same place, same totals all the way up.
+    func testRestoreUndoesARemoval() throws {
+        let model = makeModel()
+        let original = try XCTUnwrap(model.rootNode)
+        let big = try XCTUnwrap(node(model, "/root/docs/deep/big.bin"))
+
+        model.removeFromTree(paths: [big.path])
+        model.restoreToTree([big])
+
+        XCTAssertEqual(node(model, big.path)?.totalPhysicalSize, 4000)
+        XCTAssertEqual(node(model, "/root/docs/deep")?.totalPhysicalSize, 4000)
+        XCTAssertEqual(node(model, "/root/docs")?.totalPhysicalSize, 4100)
+        XCTAssertEqual(model.rootNode?.totalPhysicalSize, original.totalPhysicalSize)
+        XCTAssertEqual(node(model, "/root/docs/deep")?.childCount, 1)
+        guard case .completed(let total, _) = model.scanState else { return XCTFail() }
+        XCTAssertEqual(total, original.totalPhysicalSize)
+    }
+
     func testRemovesTheNodeFromTheTree() {
         let model = makeModel()
         XCTAssertNotNil(node(model, "/root/apple.txt"))
@@ -351,6 +369,69 @@ final class DeletionControllerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: victim.path), "file should be in Trash")
         XCTAssertEqual(model.rootNode?.children?.count, 0)
         XCTAssertEqual(model.rootNode?.totalPhysicalSize, 0)
+    }
+
+    /// Undo takes the real file back out of the Trash and puts it in the tree.
+    func testUndoPutsARealFileBack() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("undo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let victim = dir.appendingPathComponent("victim.txt")
+        try Data(repeating: 0x7A, count: 1024).write(to: victim)
+        let node = file("victim.txt", 1024, path: victim.path)
+        let model = AppModel()
+        model.rootNode = DiskNode(
+            recordIndex: 0, name: dir.lastPathComponent, path: dir.path,
+            logicalSize: 0, physicalSize: 0, fileKind: .directory,
+            isSystemProtected: false, modTimeSecs: 0, depth: 0, childCount: 1,
+            children: [node], totalPhysicalSize: 1024)
+
+        let controller = DeletionController()
+        controller.requestDelete(node)
+        controller.confirmDelete(model: model)
+        XCTAssertEqual(controller.trashed.count, 1, "a successful delete offers Undo")
+
+        controller.undo(model: model)
+
+        XCTAssertNil(controller.failure, "unexpected failure: \(controller.failure?.message ?? "")")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: victim.path), "file should be back")
+        XCTAssertEqual(model.rootNode?.children?.map(\.name), ["victim.txt"])
+        XCTAssertEqual(model.rootNode?.totalPhysicalSize, 1024)
+        XCTAssertTrue(controller.trashed.isEmpty, "the Undo bar goes away")
+    }
+
+    /// Something new at the old path must not be overwritten; the user is
+    /// told to use Put Back instead.
+    func testUndoReportsWhatItCannotPutBack() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("undo-clash-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let victim = dir.appendingPathComponent("victim.txt")
+        try Data("old".utf8).write(to: victim)
+        let node = file("victim.txt", 3, path: victim.path)
+        let model = AppModel()
+        model.rootNode = DiskNode(
+            recordIndex: 0, name: dir.lastPathComponent, path: dir.path,
+            logicalSize: 0, physicalSize: 0, fileKind: .directory,
+            isSystemProtected: false, modTimeSecs: 0, depth: 0, childCount: 1,
+            children: [node], totalPhysicalSize: 3)
+
+        let controller = DeletionController()
+        controller.requestDelete(node)
+        controller.confirmDelete(model: model)
+        let inTrash = try XCTUnwrap(controller.trashed.first?.inTrash)
+        defer { try? FileManager.default.removeItem(at: inTrash) }
+        try Data("new".utf8).write(to: victim)
+
+        controller.undo(model: model)
+
+        XCTAssertNotNil(controller.failure)
+        XCTAssertEqual(try String(contentsOf: victim, encoding: .utf8), "new", "the new file is untouched")
+        XCTAssertEqual(model.rootNode?.children?.count, 0)
     }
 }
 

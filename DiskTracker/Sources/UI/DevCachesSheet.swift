@@ -49,6 +49,10 @@ struct DevCachesSheet: View {
             items = current.filter { FileManager.default.fileExists(atPath: $0.cache.path) }
             selected.formIntersection(items?.map(\.id) ?? [])
         }
+        // Undo put a cache back; its row was already dropped, so measure again.
+        .onChange(of: deletion.restoreCount) { _, _ in
+            Task { await measure() }
+        }
     }
 
     @ViewBuilder

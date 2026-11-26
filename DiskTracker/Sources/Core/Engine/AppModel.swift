@@ -730,6 +730,41 @@ final class AppModel: @unchecked Sendable {
         }
     }
 
+    /// Puts nodes back after Undo moved them out of the Trash: the reverse of
+    /// `removeFromTree`, so the totals above them come back too.
+    func restoreToTree(_ nodes: [DiskNode]) {
+        guard var root = rootNode, !nodes.isEmpty else { return }
+        for node in nodes { Self.insert(node, into: &root) }
+        rootNode = root
+
+        if case .completed = scanState {
+            let stats = SmartFilterService.computeStats(in: root)
+            scanState = .completed(
+                totalSize: root.totalPhysicalSize,
+                fileCount: stats.totalFiles + stats.totalDirectories
+            )
+        }
+    }
+
+    /// Appends `node` under its parent folder inside `folder`, refreshing the
+    /// totals on the way back up. False when the parent isn't in this subtree.
+    @discardableResult
+    private static func insert(_ node: DiskNode, into folder: inout DiskNode) -> Bool {
+        let parentPath = (node.path as NSString).deletingLastPathComponent
+        var children = folder.children ?? []
+        if folder.path == parentPath {
+            children.append(node)
+        } else {
+            guard let i = children.firstIndex(where: {
+                $0.fileKind == .directory && (parentPath == $0.path || parentPath.hasPrefix($0.path + "/"))
+            }), insert(node, into: &children[i]) else { return false }
+        }
+        folder.children = children
+        folder.childCount = UInt32(children.count)
+        folder.totalPhysicalSize = children.reduce(UInt64(0)) { $0 + $1.totalPhysicalSize }
+        return true
+    }
+
     /// Drops `doomed` paths from `node`'s subtree and refreshes its total.
     /// Returns true when anything below this node changed, so unaffected
     /// branches are left alone rather than rebuilt.
