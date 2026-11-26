@@ -461,6 +461,9 @@ final class AppModel: @unchecked Sendable {
         }
         currentScanPath = path
         phase = .scanResults
+        // A failed scan must not leave the previous tree on screen, reading as
+        // current results.
+        rootNode = nil
         scanState = .scanning(progress: 0.0)
         filesScanned = 0
         scanGeneration += 1
@@ -478,18 +481,18 @@ final class AppModel: @unchecked Sendable {
             let grant = ScopedAccess.access(path: path)
             defer { withExtendedLifetime(grant) {} }
 
-            let scanned = self.scanner.scan(path: path, config: scanConfig) { count in
+            let report = self.scanner.scanReporting(path: path, config: scanConfig) { count in
                 DispatchQueue.main.async {
                     guard generation == self.scanGeneration else { return }
                     self.filesScanned = count
                 }
             }
-            guard let rootNode = scanned else {
+            guard let rootNode = report.root else {
                 DispatchQueue.main.async {
                     // A cancelled scan also returns nil — it bumped the
                     // generation, so this is a real failure only if it didn't.
                     guard generation == self.scanGeneration else { return }
-                    self.scanState = .failed(error: "Scan failed")
+                    self.scanState = .failed(error: report.failure ?? "The scan didn't finish.")
                 }
                 return
             }

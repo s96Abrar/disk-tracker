@@ -198,6 +198,8 @@ struct ScanResultsView: View {
     private var visualization: some View {
         if case .scanning = model.scanState {
             scanningState
+        } else if case .failed(let reason) = model.scanState {
+            failedState(reason)
         } else if model.rootNode == nil {
             emptyState
         } else {
@@ -312,6 +314,15 @@ struct ScanResultsView: View {
                 .padding(.top, Spacing.xs)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func failedState(_ reason: String) -> some View {
+        EmptyState(icon: "exclamationmark.triangle",
+                   title: "Couldn't scan \(URL(fileURLWithPath: model.currentScanPath).lastPathComponent)",
+                   message: reason,
+                   action: rescanCurrent,
+                   actionLabel: "Try Again",
+                   actionIcon: "arrow.clockwise")
     }
 
     private var emptyState: some View {

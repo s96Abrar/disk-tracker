@@ -440,6 +440,9 @@ final class AppModelTests: XCTestCase {
             XCTFail("Re-scan after completion must enter .scanning, got \(model.scanState)")
             return
         }
+        // If this scan fails, the old tree must not still be on screen as
+        // though it were the result.
+        XCTAssertNil(model.rootNode)
     }
 
     /// Bug: Same as re-scan after completion — failed scans should also allow retry.

@@ -72,10 +72,24 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         task?.terminate()
     }
 
+    /// What a scan produced: the tree, or a sentence saying why there is none.
+    struct ScanReport {
+        var root: DiskNode?
+        /// Plain-language cause, for the screen. The engine's own diagnostics
+        /// stay in the log.
+        var failure: String?
+    }
+
     /// Scan a path synchronously. Call from a background queue.
     /// `onProgress` fires from a background thread with the running count of
     /// entries the engine has seen.
     func scan(path: String, config: ScanConfig, onProgress: (@Sendable (Int) -> Void)? = nil) -> DiskNode? {
+        scanReporting(path: path, config: config, onProgress: onProgress).root
+    }
+
+    /// `scan`, plus the reason when it fails.
+    func scanReporting(path: String, config: ScanConfig,
+                       onProgress: (@Sendable (Int) -> Void)? = nil) -> ScanReport {
         log.info("scanning \(path, privacy: .public)")
 
         var args = ["scan", path]
@@ -96,7 +110,7 @@ final class DirectoryScannerBridge: @unchecked Sendable {
             try task.run()
         } catch {
             log.error("task failed: \(error.localizedDescription, privacy: .public)")
-            return nil
+            return ScanReport(failure: "Disk Tracker couldn't start its scanner. Reinstalling the app should fix this.")
         }
 
         taskLock.lock()
@@ -148,7 +162,7 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         guard !data.isEmpty else {
             let errStr = String(data: errSink.value, encoding: .utf8) ?? ""
             log.error("stderr: \(errStr, privacy: .public)")
-            return nil
+            return ScanReport(failure: "The scanner stopped before it finished.")
         }
 
         // Never interpolate the buffer or the tree into a log line:
@@ -156,10 +170,13 @@ final class DirectoryScannerBridge: @unchecked Sendable {
         // real scan.
         guard let buffer = ScanBuffer(data) else {
             log.error("engine produced an unreadable scan buffer")
-            return nil
+            return ScanReport(failure: "The scanner's results couldn't be read.")
         }
         log.info("decoded \(buffer.recordCount) records")
-        return buildTree(buffer, rootPath: path)
+        guard let root = buildTree(buffer, rootPath: path) else {
+            return ScanReport(failure: "The scanner returned no results.")
+        }
+        return ScanReport(root: root)
     }
 
     /// Parse a `progress <count>` line from the engine's stderr.
