@@ -198,12 +198,18 @@ struct ScanResultsView: View {
     private var visualization: some View {
         if case .scanning = model.scanState {
             scanningState
+        } else if case .failed(let reason) = model.scanState {
+            failedState(reason)
         } else if model.rootNode == nil {
             emptyState
         } else {
             VStack(spacing: 0) {
                 breadcrumb
                 Divider().opacity(0.3)
+                if model.unreadableFolders > 0 {
+                    unreadableNotice
+                    Divider().opacity(0.3)
+                }
                 HSplitView {
                     // A category or search narrows the left pane to a flat
                     // list; the chart stays a structural view of the tree.
@@ -244,6 +250,25 @@ struct ScanResultsView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    /// The sandbox only opens folders the user picked, so a scan of anything
+    /// wider silently loses whatever it can't list. Say so, and offer the fix.
+    private var unreadableNotice: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(model.unreadableFolders == 1
+                 ? "1 folder couldn't be read, so sizes here are lower than what's on disk."
+                 : "\(model.unreadableFolders) folders couldn't be read, so sizes here are lower than what's on disk.")
+                .font(.system(size: 11))
+            Spacer(minLength: Spacing.sm)
+            Button("Choose Folder…", action: chooseFolderAndScan)
+                .controlSize(.small)
+                .help("Pick this folder in the panel to let Disk Tracker read all of it")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 6)
     }
 
     /// Where both panes are. Always shown, so zooming doesn't shift the
@@ -299,19 +324,30 @@ struct ScanResultsView: View {
         VStack(spacing: Spacing.sm) {
             ProgressView()
                 .controlSize(.large)
-            Text("Scanning \(model.currentScanPath)")
+            Text("\(model.isOpeningSavedScan ? "Opening saved scan of" : "Scanning") \(model.currentScanPath)")
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text("\(model.filesScanned) items found")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            Button("Cancel Scan") { model.cancelScan() }
+            if !model.isOpeningSavedScan {
+                Text("\(model.filesScanned) items found")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Button("Cancel") { model.cancelScan() }
                 .buttonStyle(.bordered)
                 .padding(.top, Spacing.xs)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func failedState(_ reason: String) -> some View {
+        EmptyState(icon: "exclamationmark.triangle",
+                   title: "Couldn't scan \(URL(fileURLWithPath: model.currentScanPath).lastPathComponent)",
+                   message: reason,
+                   action: rescanCurrent,
+                   actionLabel: "Try Again",
+                   actionIcon: "arrow.clockwise")
     }
 
     private var emptyState: some View {

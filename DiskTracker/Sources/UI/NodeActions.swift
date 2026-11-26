@@ -28,6 +28,14 @@ final class DeletionController {
     /// Outcome of the last deletion, shown as an alert. Cleared on dismissal.
     var failure: DeletionFailure?
 
+    /// What the last deletion moved to Trash and where it landed, for Undo.
+    /// Empty when there is nothing to undo.
+    private(set) var trashed: [(node: DiskNode, inTrash: URL)] = []
+
+    /// Bumped whenever Undo puts something back, for views that keep their own
+    /// list of what is on disk.
+    private(set) var restoreCount = 0
+
     struct DeletionFailure: Identifiable {
         let id = UUID()
         let title: String
@@ -95,10 +103,12 @@ final class DeletionController {
 
         var deleted: [String] = []
         var failures: [(String, String)] = []
-        for (url, result) in results {
+        trashed = []
+        for (node, (url, result)) in zip(nodes, results) {
             switch result {
-            case .success:
+            case .success(let inTrash):
                 deleted.append(url.path)
+                if let inTrash { trashed.append((node, inTrash)) }
             case .failure(let error):
                 failures.append((url.lastPathComponent, Self.describe(error)))
             }
@@ -115,6 +125,40 @@ final class DeletionController {
                 : "Couldn't move \(failures.count) items to Trash",
             message: Self.summarize(failures, deletedCount: deleted.count)
         )
+    }
+
+    /// Moves the last deletion back out of the Trash.
+    ///
+    /// Anything that can't go back — the Trash was emptied, or a new item now
+    /// sits at the old path — is reported; the user can still use Put Back.
+    func undo(model: AppModel) {
+        let items = trashed
+        trashed = []
+        var restored: [DiskNode] = []
+        var failed: [String] = []
+        for (node, inTrash) in items {
+            do {
+                try FileManager.default.moveItem(at: inTrash, to: URL(fileURLWithPath: node.path))
+                restored.append(node)
+            } catch {
+                failed.append(node.name)
+            }
+        }
+        if !restored.isEmpty {
+            model.restoreToTree(restored)
+            restoreCount += 1
+        }
+        guard !failed.isEmpty else { return }
+        failure = DeletionFailure(
+            title: failed.count == 1
+                ? "Couldn't put back \(failed[0])"
+                : "Couldn't put back \(failed.count) items",
+            message: "Open the Trash in Finder, select the item and choose File > Put Back.")
+    }
+
+    /// Hides the Undo bar.
+    func dismissUndo() {
+        trashed = []
     }
 
     static func describe(_ error: FileOperationError) -> String {
@@ -268,6 +312,11 @@ private struct DeletionConfirmationModifier: ViewModifier {
             } message: {
                 Text(explanation)
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !deletion.trashed.isEmpty {
+                    undoBar
+                }
+            }
             .alert(item: $deletion.failure) { failure in
                 Alert(
                     title: Text(failure.title),
@@ -275,6 +324,44 @@ private struct DeletionConfirmationModifier: ViewModifier {
                     dismissButton: .default(Text("OK"))
                 )
             }
+    }
+
+    /// Confirms the deletion and offers the way back.
+    private var undoBar: some View {
+        let items = deletion.trashed
+        let size = items.reduce(UInt64(0)) { total, item in
+            total + (item.node.fileKind == .directory ? item.node.totalPhysicalSize : item.node.physicalSize)
+        }
+        return HStack(spacing: Spacing.sm) {
+            Image(systemName: "trash")
+                .foregroundStyle(.secondary)
+            Text(items.count == 1
+                 ? "Moved “\(items[0].node.name)” to Trash · \(humanReadableBytes(size))"
+                 : "Moved \(items.count) items to Trash · \(humanReadableBytes(size))")
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Button("Undo") { deletion.undo(model: model) }
+                .controlSize(.small)
+            Button {
+                deletion.dismissUndo()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help("Dismiss")
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.xs)
+        .background(.regularMaterial)
+        .overlay(
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 1),
+            alignment: .top
+        )
     }
 
     private var title: String {

@@ -16,20 +16,37 @@ enum FolderPicker {
     /// Must be called on the main thread — `runModal()` is blocking.
     @MainActor
     static func chooseScanFolder() -> URL? {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-        panel.title = "Select Folder to Scan"
-        panel.message = "Choose a directory to analyze with Disk Tracker"
-        panel.prompt = "Scan"
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        guard let url = chooseFolder(title: "Select Folder to Scan",
+                                     message: "Choose a directory to analyze with Disk Tracker",
+                                     prompt: "Scan") else { return nil }
         // Bookmark now, while access is held: inside the sandbox the grant from
         // this panel ends with the launch, and a scan cannot be re-opened after
         // a restart without one.
         ScopedAccess.remember(url)
         return url
+    }
+
+    /// Prompts for a folder for Settings to leave out of scans. No bookmark:
+    /// the engine skips it by path and never needs to open it.
+    @MainActor
+    static func chooseFolderToExclude() -> URL? {
+        chooseFolder(title: "Exclude a Folder",
+                     message: "Scans will skip this folder and everything inside it.",
+                     prompt: "Exclude")
+    }
+
+    @MainActor
+    private static func chooseFolder(title: String, message: String, prompt: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.title = title
+        panel.message = message
+        panel.prompt = prompt
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 
     /// The real home folder, asking for access the first time. Nil when the

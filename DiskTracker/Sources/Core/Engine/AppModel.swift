@@ -76,18 +76,36 @@ final class AppModel: @unchecked Sendable {
     /// Loads the serialized tree from disk and sets it as the current tree.
     /// No new filesystem scan is performed.
     func restoreScanFromHistory(_ entry: ScanHistoryEntry) {
+        guard canStartNewScan else { return }
         currentScanPath = entry.volumePath
         scanGrant = ScopedAccess.access(path: entry.volumePath)
         phase = .scanResults
+        // Show the loading view, not the previous scan's tree, while the saved
+        // one is read.
+        rootNode = nil
+        filesScanned = 0
+        unreadableFolders = 0
+        isOpeningSavedScan = true
+        scanState = .scanning(progress: 0)
+        scanGeneration += 1
+        let generation = scanGeneration
 
         // Reading + decoding a recorded tree takes seconds on a large scan —
         // never on the main thread.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self,
-                  let data = self.scanHistory.loadTree(for: entry),
-                  let tree = try? JSONDecoder().decode(DiskNode.self, from: data) else { return }
-            let stats = SmartFilterService.computeStats(in: tree)
+            guard let self else { return }
+            let tree = self.scanHistory.loadTree(for: entry)
+                .flatMap { try? JSONDecoder().decode(DiskNode.self, from: $0) }
+            let stats = tree.map { SmartFilterService.computeStats(in: $0) }
             DispatchQueue.main.async {
+                // Cancelled, or superseded by a scan.
+                guard generation == self.scanGeneration else { return }
+                self.isOpeningSavedScan = false
+                guard let tree, let stats else {
+                    self.scanState = .failed(
+                        error: "The saved results for this scan are gone. Scan it again to see it.")
+                    return
+                }
                 self.rootNode = tree
                 self.cachedTreeStats = stats
                 self.selectedNode = tree
@@ -406,17 +424,22 @@ final class AppModel: @unchecked Sendable {
             // ponytail: duplicate scan is heavier — async, populates duplicateGroups.
             guard !isDuplicateScanRunning else { return }
             isDuplicateScanRunning = true
+            smartFilterResults = []
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let self, let root = self.rootNode else { return }
                 let groups = DuplicateFinderService.findDuplicates(in: root, config: cfg)
                 DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.isDuplicateScanRunning = false
+                    // shortcut: closing the sheet drops the result rather than
+                    // stopping the search; add cancellation to
+                    // DuplicateFinderService if a search outlives its sheet noticeably.
+                    guard self.activeSmartFilter == .duplicates else { return }
                     self.duplicateGroups = groups
                     self.smartFilterResults = groups.flatMap { group in
                         group.duplicateNodes.map { node in
                             SmartFilterResult(node: node, matchedAt: Date(), matchReason: .duplicate)
                         }
                     }
-                    self.isDuplicateScanRunning = false
                 }
             }
         case .bundles:
@@ -444,9 +467,18 @@ final class AppModel: @unchecked Sendable {
 
     // MARK: - Scanning
 
+    /// True while a scan from history is being read back, which shows the
+    /// same waiting view as a scan with different wording.
+    var isOpeningSavedScan = false
+
     /// Entries the running (or last) scan has seen so far. The engine reports a
     /// count, not a fraction — the total is unknowable until the walk ends.
     var filesScanned: Int = 0
+
+    /// Folders the last scan couldn't read, usually because the sandbox only
+    /// opens folders the user picked. Their contents are missing from the
+    /// totals, which the results screen says.
+    var unreadableFolders: Int = 0
 
     /// Bumped on every start and cancel, so a scan that finishes after being
     /// cancelled (or superseded) can't overwrite newer state.
@@ -461,8 +493,12 @@ final class AppModel: @unchecked Sendable {
         }
         currentScanPath = path
         phase = .scanResults
+        // A failed scan must not leave the previous tree on screen, reading as
+        // current results.
+        rootNode = nil
         scanState = .scanning(progress: 0.0)
         filesScanned = 0
+        unreadableFolders = 0
         scanGeneration += 1
         let generation = scanGeneration
         let startTime = Date()
@@ -478,18 +514,28 @@ final class AppModel: @unchecked Sendable {
             let grant = ScopedAccess.access(path: path)
             defer { withExtendedLifetime(grant) {} }
 
-            let scanned = self.scanner.scan(path: path, config: scanConfig) { count in
+            let report = self.scanner.scanReporting(path: path, config: scanConfig) { count in
                 DispatchQueue.main.async {
                     guard generation == self.scanGeneration else { return }
                     self.filesScanned = count
                 }
             }
-            guard let rootNode = scanned else {
+            guard let rootNode = report.root else {
                 DispatchQueue.main.async {
                     // A cancelled scan also returns nil — it bumped the
                     // generation, so this is a real failure only if it didn't.
                     guard generation == self.scanGeneration else { return }
-                    self.scanState = .failed(error: "Scan failed")
+                    self.scanState = .failed(error: report.failure ?? "The scan didn't finish.")
+                }
+                return
+            }
+            // Only the root itself being unreadable leaves it childless with
+            // an unreadable count; an empty readable folder has nothing to fail.
+            if report.unreadableFolders > 0, rootNode.children?.isEmpty ?? true {
+                DispatchQueue.main.async {
+                    guard generation == self.scanGeneration else { return }
+                    self.scanState = .failed(error: "Disk Tracker isn't allowed to read this folder. "
+                        + "Choose it with Choose Folder… to give access.")
                 }
                 return
             }
@@ -506,6 +552,7 @@ final class AppModel: @unchecked Sendable {
                 guard generation == self.scanGeneration else { return }
                 self.scanGrant = grant
                 self.rootNode = rootNode
+                self.unreadableFolders = report.unreadableFolders
                 self.cachedTreeStats = stats
                 self.activeSmartFilter = nil
                 self.smartFilterResults = []
@@ -529,6 +576,7 @@ final class AppModel: @unchecked Sendable {
         // and the stale generation keeps it from reporting a failure.
         scanGeneration += 1
         scanner.cancel()
+        isOpeningSavedScan = false
         scanState = .idle
         rootNode = nil
         filesScanned = 0
@@ -680,6 +728,41 @@ final class AppModel: @unchecked Sendable {
                 fileCount: stats.totalFiles + stats.totalDirectories
             )
         }
+    }
+
+    /// Puts nodes back after Undo moved them out of the Trash: the reverse of
+    /// `removeFromTree`, so the totals above them come back too.
+    func restoreToTree(_ nodes: [DiskNode]) {
+        guard var root = rootNode, !nodes.isEmpty else { return }
+        for node in nodes { Self.insert(node, into: &root) }
+        rootNode = root
+
+        if case .completed = scanState {
+            let stats = SmartFilterService.computeStats(in: root)
+            scanState = .completed(
+                totalSize: root.totalPhysicalSize,
+                fileCount: stats.totalFiles + stats.totalDirectories
+            )
+        }
+    }
+
+    /// Appends `node` under its parent folder inside `folder`, refreshing the
+    /// totals on the way back up. False when the parent isn't in this subtree.
+    @discardableResult
+    private static func insert(_ node: DiskNode, into folder: inout DiskNode) -> Bool {
+        let parentPath = (node.path as NSString).deletingLastPathComponent
+        var children = folder.children ?? []
+        if folder.path == parentPath {
+            children.append(node)
+        } else {
+            guard let i = children.firstIndex(where: {
+                $0.fileKind == .directory && (parentPath == $0.path || parentPath.hasPrefix($0.path + "/"))
+            }), insert(node, into: &children[i]) else { return false }
+        }
+        folder.children = children
+        folder.childCount = UInt32(children.count)
+        folder.totalPhysicalSize = children.reduce(UInt64(0)) { $0 + $1.totalPhysicalSize }
+        return true
     }
 
     /// Drops `doomed` paths from `node`'s subtree and refreshes its total.

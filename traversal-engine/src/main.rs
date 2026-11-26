@@ -8,7 +8,8 @@
 //! hand without a decoder, and nothing in the app reads it.
 //!
 //! Progress goes to stderr as `progress <count>` lines, one per sample, so
-//! stdout stays a single clean payload.
+//! stdout stays a single clean payload. After the walk, one
+//! `unreadable <count>` line reports directories that could not be listed.
 
 use disk_tracker_engine::scanner::{scan_directory_excluding, ScanConfig};
 use disk_tracker_engine::wire;
@@ -60,6 +61,8 @@ fn main() {
                 process::exit(1);
             }
         };
+
+    eprintln!("unreadable {}", result.unreadable_dirs);
 
     if json_mode {
         print_json(&result);

@@ -45,7 +45,10 @@ struct SmartFilterResultsView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if model.smartFilterResults.isEmpty {
+            if model.isDuplicateScanRunning {
+                ProgressView("Finding duplicates…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.smartFilterResults.isEmpty {
                 emptyState
             } else {
                 resultList

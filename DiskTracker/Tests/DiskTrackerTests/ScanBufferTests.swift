@@ -402,6 +402,48 @@ final class ScanBufferTreeTests: XCTestCase {
         XCTAssertEqual(try names(), [".hidden", "seen.txt"])
     }
 
+    /// A folder the engine can't list used to vanish from the totals without
+    /// a word; the count is what lets the results screen say so.
+    func testUnreadableFoldersAreCounted() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("unreadable-\(UUID().uuidString)")
+        let locked = dir.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: locked.appendingPathComponent("inside.txt"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        let report = DirectoryScannerBridge().scanReporting(path: dir.path, config: ScanConfig())
+        XCTAssertNotNil(report.root)
+        XCTAssertEqual(report.unreadableFolders, 1)
+    }
+
+    /// A scan root the app can't read at all is a failure, not an empty folder.
+    func testAnUnreadableScanRootFails() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("unreadable-root-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: dir.appendingPathComponent("inside.txt"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        let model = AppModel()
+        model.startScan(path: dir.path)
+        let deadline = Date().addingTimeInterval(10)
+        while case .scanning = model.scanState, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard case .failed = model.scanState else {
+            return XCTFail("an unreadable root must fail, got \(model.scanState)")
+        }
+    }
+
     /// The engine the app actually launches, from Contents/MacOS. Catches a
     /// wrong location, an unlaunchable binary, and an engine signed with the
     /// sandbox entitlement but without inherit (verified: it fails then).

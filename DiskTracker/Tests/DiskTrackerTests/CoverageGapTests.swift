@@ -654,15 +654,31 @@ final class ScanRestoreTests: XCTestCase {
         model.scanHistory.clearHistory()
     }
 
-    func testRestoringAnEntryWithNoTreeLeavesTheTreeEmpty() {
+    /// A missing tree used to leave the screen on "No scan loaded" (or the
+    /// previous scan's tree) for good, with nothing said.
+    func testRestoringAnEntryWithNoTreeReportsIt() async throws {
         let model = AppModel()
+        model.rootNode = DiskNode(recordIndex: 0, name: "previous", path: "/previous",
+                                  logicalSize: 0, physicalSize: 0, fileKind: .directory,
+                                  isSystemProtected: false, modTimeSecs: 0, depth: 0,
+                                  childCount: 0, children: [], totalPhysicalSize: 0)
         model.scanHistory.recordScan(volumePath: "/gone", totalFiles: 1, totalSize: 1, duration: 1)
         let entry = model.scanHistory.entries[0]
 
         model.restoreScanFromHistory(entry)
 
         XCTAssertEqual(model.currentScanPath, "/gone")
-        XCTAssertNil(model.rootNode, "there was no tree to load")
+        XCTAssertNil(model.rootNode, "the previous scan's tree must not stand in for this one")
+        XCTAssertTrue(model.isOpeningSavedScan, "the loading view shows while the tree is read")
+
+        let deadline = Date().addingTimeInterval(5)
+        while case .scanning = model.scanState, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard case .failed = model.scanState else {
+            return XCTFail("a missing tree must be reported, got \(model.scanState)")
+        }
+        XCTAssertFalse(model.isOpeningSavedScan)
         model.scanHistory.clearHistory()
     }
 }

@@ -66,7 +66,8 @@ final class FileOperationsService: @unchecked Sendable {
 
     /// Move a single file or directory to trash.
     /// Returns `.failure(.systemPathProtected)` if the path is protected.
-    func moveToTrash(url: URL) -> Result<Void, FileOperationError> {
+    /// On success, the item's new location in the Trash, which Undo moves back.
+    func moveToTrash(url: URL) -> Result<URL?, FileOperationError> {
         guard url.isFileURL else {
             return .failure(.invalidURL)
         }
@@ -75,8 +76,9 @@ final class FileOperationsService: @unchecked Sendable {
         }
 
         do {
-            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            return .success(())
+            var inTrash: NSURL?
+            try FileManager.default.trashItem(at: url, resultingItemURL: &inTrash)
+            return .success(inTrash as URL?)
         } catch {
             return .failure(.deletionFailed(underlying: error))
         }
@@ -105,7 +107,7 @@ final class FileOperationsService: @unchecked Sendable {
     /// Move multiple files/directories to trash, returning per-item results.
     /// Protected paths return `.systemPathProtected`; valid paths return `.success`
     /// or `.deletionFailed`.
-    func moveMultipleToTrash(urls: [URL]) -> [(url: URL, result: Result<Void, FileOperationError>)] {
+    func moveMultipleToTrash(urls: [URL]) -> [(url: URL, result: Result<URL?, FileOperationError>)] {
         urls.map { url in
             let result = moveToTrash(url: url)
             return (url: url, result: result)

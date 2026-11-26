@@ -90,12 +90,27 @@ struct FilteredResultsView: View {
         .nodeActions(node, model: model)
     }
 
+    /// Every empty result gets a way out: widen the category first, since a
+    /// search that fails in one category may hit in the others.
+    @ViewBuilder
     private var emptyState: some View {
-        EmptyState(
-            icon: "magnifyingglass",
-            title: "No matches",
-            message: model.searchQuery.isEmpty
-                ? "This scan has no \(model.selectedCategory.rawValue.lowercased())."
-                : "Nothing named “\(model.searchQuery)” in \(model.selectedCategory.rawValue.lowercased()).")
+        let category = model.selectedCategory
+        let query = model.searchQuery
+        if query.isEmpty {
+            EmptyState(icon: "magnifyingglass", title: "No matches",
+                       message: "This scan has no \(category.rawValue.lowercased()).",
+                       action: { model.selectedCategory = .directories },
+                       actionLabel: "Show Everything", actionIcon: "folder")
+        } else if category != .directories {
+            EmptyState(icon: "magnifyingglass", title: "No matches",
+                       message: "Nothing named “\(query)” in \(category.rawValue.lowercased()).",
+                       action: { model.selectedCategory = .directories },
+                       actionLabel: "Search All Categories", actionIcon: "magnifyingglass")
+        } else {
+            EmptyState(icon: "magnifyingglass", title: "No matches",
+                       message: "Nothing named “\(query)” in this scan. Check the spelling or try part of the name.",
+                       action: { model.searchQuery = "" },
+                       actionLabel: "Clear Search", actionIcon: "xmark.circle")
+        }
     }
 }

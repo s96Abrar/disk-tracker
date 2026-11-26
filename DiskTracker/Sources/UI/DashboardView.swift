@@ -149,9 +149,11 @@ struct DashboardView: View {
         ) {
             ForEach(volumes) { volume in
                 VolumeCard(volume: volume) {
-                    guard model.canStartNewScan else { return }
                     model.startScan(path: volume.url.path)
                 }
+                // A click during a scan used to do nothing at all.
+                .disabled(!model.canStartNewScan)
+                .help(model.canStartNewScan ? "Scan \(volume.name)" : "Wait for the current scan to finish")
             }
         }
     }
@@ -185,6 +187,7 @@ struct DashboardView: View {
                     tableRow(entry: entry, isLast: idx == model.scanHistory.entries.count - 1)
                 }
                 .buttonStyle(.plain)
+                .disabled(!model.canStartNewScan)
                 Divider().opacity(0.2)
             }
         }

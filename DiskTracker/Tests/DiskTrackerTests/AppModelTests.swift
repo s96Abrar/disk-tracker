@@ -360,6 +360,8 @@ final class AppModelTests: XCTestCase {
     func testRejectsProgressLineWithoutValidCount() {
         XCTAssertNil(parseProgress("progress"))
         XCTAssertNil(parseProgress("progress abc"))
+        XCTAssertNil(parseProgress("unreadable 3"), "the unreadable count is not progress")
+        XCTAssertEqual(DirectoryScannerBridge.parseCount(Data("unreadable 3".utf8), prefix: "unreadable "), 3)
     }
 
     // MARK: - Tree Stats Tests
@@ -420,6 +422,26 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.smartFilterResults.isEmpty)
     }
 
+    // MARK: - Duplicate search
+
+    /// Closing the sheet mid-search must not let the result land afterwards.
+    func testDuplicateResultIsDroppedAfterTheSheetCloses() async throws {
+        let model = AppModel()
+        model.rootNode = makeTreeNode(name: "r", path: "/r",
+                                      children: [makeLeafNode(name: "a", path: "/r/a")])
+        model.activeSmartFilter = .duplicates
+        model.runSmartFilter()
+        model.activeSmartFilter = nil
+        model.smartFilterResults = [SmartFilterResult(node: model.rootNode!, matchedAt: Date(),
+                                                      matchReason: .duplicate)]
+
+        let deadline = Date().addingTimeInterval(5)
+        while model.isDuplicateScanRunning, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.smartFilterResults.count, 1, "a closed search must not overwrite results")
+    }
+
     // MARK: - Re-scan Tests (Regression: fix-view-defects)
 
     /// Bug: startScan guards on `.idle` only. After a scan completes (state = .completed),
@@ -440,6 +462,9 @@ final class AppModelTests: XCTestCase {
             XCTFail("Re-scan after completion must enter .scanning, got \(model.scanState)")
             return
         }
+        // If this scan fails, the old tree must not still be on screen as
+        // though it were the result.
+        XCTAssertNil(model.rootNode)
     }
 
     /// Bug: Same as re-scan after completion — failed scans should also allow retry.
