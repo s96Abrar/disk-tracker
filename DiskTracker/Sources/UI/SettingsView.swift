@@ -140,7 +140,7 @@ private extension SettingsView {
 
                 HStack {
                     Button {
-                        guard let url = FolderPicker.chooseScanFolder() else { return }
+                        guard let url = FolderPicker.chooseFolderToExclude() else { return }
                         ExclusionSettings.add(url.path)
                         excludedPaths = ExclusionSettings.paths
                     } label: {
