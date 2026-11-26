@@ -188,10 +188,10 @@ present — and then mounts the finished image and verifies it again.
 ### Testing
 
 ```bash
-cd traversal-engine && cargo test --release    # 27 unit + 4 perf + 3 scale
+cd traversal-engine && cargo test --release    # 28 unit + 4 perf + 3 scale
 
 xcodebuild test -project DiskTracker/DiskTracker.xcodeproj \
-  -scheme DiskTracker -destination 'platform=macOS'        # 363 tests
+  -scheme DiskTracker -destination 'platform=macOS'        # 366 tests
 
 ./check-coverage                # per-file coverage, fails under target
 ./benchmark                     # performance targets
