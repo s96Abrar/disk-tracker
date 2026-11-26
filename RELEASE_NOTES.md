@@ -1,3 +1,42 @@
+# Disk Tracker v0.1.5 — Find the 40 GB you forgot about
+
+## What's new in v0.1.5
+
+**Undo after Move to Trash.** After you trash something, a bar says what went and how much space it frees, with an **Undo** button. Undo puts it back where it was, sizes and all. If it can't — the Trash was emptied, or something new now has that name — it tells you, and Finder's Put Back still works.
+
+**Scans tell you when they can't see everything.** macOS only lets Disk Tracker read folders you choose. When a scan can't open some folders, the results now say how many, because the sizes shown are lower than what is really on disk. **Choose Folder…** right there fixes it. A folder the app can't read at all is reported as such, not shown as empty.
+
+**Clearer when something goes wrong.**
+- A failed scan now says why on the results screen, with **Try Again**. It used to show only in the status bar, sometimes next to the previous scan's results.
+- Reopening a scan from history shows that it is loading, and says so if its saved results are gone, instead of sitting on a blank screen.
+- Finding duplicates shows its progress, instead of "No matches" while it is still looking.
+
+**Smaller fixes.**
+- A search or category with no results now offers a way out: Show Everything, Search All Categories, or Clear Search.
+- The panel for excluding a folder in Settings says "Exclude", not "Scan".
+- Volume cards and recent scans on the Dashboard are greyed out while a scan runs, instead of ignoring the click.
+
+## Installing
+
+1. Open `DiskTracker-v0.1.5.dmg` and drag **Disk Tracker** to Applications.
+2. Run this once in Terminal:
+   ```
+   xattr -dr com.apple.quarantine /Applications/DiskTracker.app
+   ```
+3. Open it normally.
+
+Step 2 is required because this build is **ad-hoc signed rather than
+notarized** — Apple notarization needs a paid Developer Program membership.
+The command clears the "downloaded from the internet" flag on this app only;
+it does not disable Gatekeeper system-wide, and the signature stays valid.
+
+> Right-click → Open does **not** work for ad-hoc signed apps on Apple
+> Silicon. The `xattr` command is required.
+
+**Requires macOS 15.0 or later.**
+
+---
+
 # Disk Tracker v0.1.4 — Find the 40 GB you forgot about
 
 ## What's new in v0.1.4
