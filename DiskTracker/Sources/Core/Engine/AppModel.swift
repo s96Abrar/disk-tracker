@@ -423,17 +423,22 @@ final class AppModel: @unchecked Sendable {
             // ponytail: duplicate scan is heavier — async, populates duplicateGroups.
             guard !isDuplicateScanRunning else { return }
             isDuplicateScanRunning = true
+            smartFilterResults = []
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let self, let root = self.rootNode else { return }
                 let groups = DuplicateFinderService.findDuplicates(in: root, config: cfg)
                 DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.isDuplicateScanRunning = false
+                    // shortcut: closing the sheet drops the result rather than
+                    // stopping the search; add cancellation to
+                    // DuplicateFinderService if a search outlives its sheet noticeably.
+                    guard self.activeSmartFilter == .duplicates else { return }
                     self.duplicateGroups = groups
                     self.smartFilterResults = groups.flatMap { group in
                         group.duplicateNodes.map { node in
                             SmartFilterResult(node: node, matchedAt: Date(), matchReason: .duplicate)
                         }
                     }
-                    self.isDuplicateScanRunning = false
                 }
             }
         case .bundles:
