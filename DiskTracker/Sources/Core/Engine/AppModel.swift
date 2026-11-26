@@ -76,18 +76,35 @@ final class AppModel: @unchecked Sendable {
     /// Loads the serialized tree from disk and sets it as the current tree.
     /// No new filesystem scan is performed.
     func restoreScanFromHistory(_ entry: ScanHistoryEntry) {
+        guard canStartNewScan else { return }
         currentScanPath = entry.volumePath
         scanGrant = ScopedAccess.access(path: entry.volumePath)
         phase = .scanResults
+        // Show the loading view, not the previous scan's tree, while the saved
+        // one is read.
+        rootNode = nil
+        filesScanned = 0
+        isOpeningSavedScan = true
+        scanState = .scanning(progress: 0)
+        scanGeneration += 1
+        let generation = scanGeneration
 
         // Reading + decoding a recorded tree takes seconds on a large scan —
         // never on the main thread.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self,
-                  let data = self.scanHistory.loadTree(for: entry),
-                  let tree = try? JSONDecoder().decode(DiskNode.self, from: data) else { return }
-            let stats = SmartFilterService.computeStats(in: tree)
+            guard let self else { return }
+            let tree = self.scanHistory.loadTree(for: entry)
+                .flatMap { try? JSONDecoder().decode(DiskNode.self, from: $0) }
+            let stats = tree.map { SmartFilterService.computeStats(in: $0) }
             DispatchQueue.main.async {
+                // Cancelled, or superseded by a scan.
+                guard generation == self.scanGeneration else { return }
+                self.isOpeningSavedScan = false
+                guard let tree, let stats else {
+                    self.scanState = .failed(
+                        error: "The saved results for this scan are gone. Scan it again to see it.")
+                    return
+                }
                 self.rootNode = tree
                 self.cachedTreeStats = stats
                 self.selectedNode = tree
@@ -444,6 +461,10 @@ final class AppModel: @unchecked Sendable {
 
     // MARK: - Scanning
 
+    /// True while a scan from history is being read back, which shows the
+    /// same waiting view as a scan with different wording.
+    var isOpeningSavedScan = false
+
     /// Entries the running (or last) scan has seen so far. The engine reports a
     /// count, not a fraction — the total is unknowable until the walk ends.
     var filesScanned: Int = 0
@@ -532,6 +553,7 @@ final class AppModel: @unchecked Sendable {
         // and the stale generation keeps it from reporting a failure.
         scanGeneration += 1
         scanner.cancel()
+        isOpeningSavedScan = false
         scanState = .idle
         rootNode = nil
         filesScanned = 0

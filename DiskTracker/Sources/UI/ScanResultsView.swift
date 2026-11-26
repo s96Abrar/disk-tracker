@@ -301,15 +301,17 @@ struct ScanResultsView: View {
         VStack(spacing: Spacing.sm) {
             ProgressView()
                 .controlSize(.large)
-            Text("Scanning \(model.currentScanPath)")
+            Text("\(model.isOpeningSavedScan ? "Opening saved scan of" : "Scanning") \(model.currentScanPath)")
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text("\(model.filesScanned) items found")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            Button("Cancel Scan") { model.cancelScan() }
+            if !model.isOpeningSavedScan {
+                Text("\(model.filesScanned) items found")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Button("Cancel") { model.cancelScan() }
                 .buttonStyle(.bordered)
                 .padding(.top, Spacing.xs)
         }
